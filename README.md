@@ -24,5 +24,14 @@ O **PrintFlow ERP** é uma solução completa em Python projetada para pequenos 
 
 1. **Clone o repositório:**
    ```bash
-   git clone [https://github.com/seu-usuario/printflow-erp.git](https://github.com/seu-usuario/printflow-erp.git)
+   git clone https://github.com/PotenzaFelip/PrintFlow-ERP.git
    cd printflow-erp
+
+## Gerar Build do Projeto
+1. **Rode os seguintes comandos**
+    ```bash
+    # Instale a biblioteca se ainda não tiver
+    pip install pyinstaller
+
+    # Execute o build
+    pyinstaller --noconfirm --onedir --windowed --add-data "feats;feats" --name "PrintFlow_ERP" main.py
