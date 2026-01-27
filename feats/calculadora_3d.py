@@ -21,29 +21,29 @@ class AbaCalculadora(ctk.CTkScrollableFrame):
         self.combo_mat = ctk.CTkOptionMenu(self, values=self.get_mats(), width=350)
         self.combo_mat.pack(pady=5)
 
-        # Campos de Entrada
+        # Campos de Entrada baseados nos Prints
         self.ent_nome = self.add_i("Nome da Peça:", "Nova Peça")
         self.ent_qtd = self.add_i("Quantidade de Peças na Bandeja:", "1")
         self.ent_peso_total = self.add_i("Peso TOTAL da Impressão (g):", "0")
         self.ent_horas = self.add_i("Tempo Total de Impressão (h):", "0")
-        self.ent_hm = self.add_i("Valor da Hora-Máquina (R$):", "16.50")
-        self.ent_taxa = self.add_i("Margem de Lucro/Taxas (%):", "10")
+        
+        # Valores sugeridos conforme o print
+        self.ent_hm = self.add_i("Valor da Hora-Máquina (Sugerido R$ 2,00):", "2.00")
+        self.ent_setup = self.add_i("Mão de Obra/Setup (Mínimo R$ 10,00):", "10.00")
+        self.ent_markup = self.add_i("Fator Markup (Ex: 2x para Venda, 1.5x Atacado):", "2.0")
 
         # Exibição do Resultado
-        self.lbl_detalhes = ctk.CTkLabel(self, text="Custo Mat: R$ 0.00 | Custo Maq: R$ 0.00", font=("Arial", 11))
+        self.lbl_detalhes = ctk.CTkLabel(self, text="Custo Base: R$ 0.00", font=("Arial", 11))
         self.lbl_detalhes.pack(pady=(15, 0))
         
-        self.lbl_res = ctk.CTkLabel(self, text="Venda Total: R$ 0,00", font=("Arial", 24, "bold"), text_color="#2ecc71")
+        self.lbl_res = ctk.CTkLabel(self, text="Venda Sugerida: R$ 0,00", font=("Arial", 24, "bold"), text_color="#2ecc71")
         self.lbl_res.pack(pady=5)
         
-        self.lbl_unitario = ctk.CTkLabel(self, text="Preço Unitário Sugerido: R$ 0,00", font=("Arial", 14), text_color="#3498db")
+        self.lbl_unitario = ctk.CTkLabel(self, text="Preço Unitário: R$ 0,00", font=("Arial", 14), text_color="#3498db")
         self.lbl_unitario.pack(pady=(0, 10))
 
         # --- BOTÕES ---
-        # Botão de Cotar: Apenas faz o cálculo visual
         ctk.CTkButton(self, text="APENAS CALCULAR COTAÇÃO", fg_color="#555", height=45, command=lambda: self.calc(salvar=False)).pack(pady=5)
-        
-        # Botão de Produzir: Salva no banco e abate estoque
         ctk.CTkButton(self, text="PRODUZIR E LANÇAR NO ESTOQUE", fg_color="#2ecc71", height=50, command=lambda: self.calc(salvar=True)).pack(pady=5)
 
     def add_i(self, txt, padrao):
@@ -65,9 +65,7 @@ class AbaCalculadora(ctk.CTkScrollableFrame):
             self.ent_qtd.delete(0, 'end'); self.ent_qtd.insert(0, "1")
             self.ent_peso_total.delete(0, 'end'); self.ent_peso_total.insert(0, str(d[1]))
             self.ent_horas.delete(0, 'end'); self.ent_horas.insert(0, str(d[2]))
-            self.ent_hm.delete(0, 'end'); self.ent_hm.insert(0, str(d[3]))
-            self.ent_taxa.delete(0, 'end'); self.ent_taxa.insert(0, str(d[4]))
-            self.calc(salvar=False)
+            # Note: Como mudamos a lógica, esses campos carregarão os valores antigos no novo layout
         except: pass
 
     def conv(self, v): 
@@ -86,32 +84,33 @@ class AbaCalculadora(ctk.CTkScrollableFrame):
             peso_t = self.conv(self.ent_peso_total.get())
             tempo_t = self.conv(self.ent_horas.get())
             v_hm = self.conv(self.ent_hm.get())
-            margem = self.conv(self.ent_taxa.get())
+            v_setup = self.conv(self.ent_setup.get())
+            markup = self.conv(self.ent_markup.get())
 
+            # --- LÓGICA CONFORME O PRINT ---
             custo_mat = peso_t * f[0]
             custo_maq = tempo_t * v_hm
-            total_venda = (custo_mat + custo_maq) / (1 - (margem/100))
+            custo_total = custo_mat + custo_maq + v_setup
+            
+            total_venda = custo_total * markup
             valor_un = total_venda / qtd
 
-            self.lbl_detalhes.configure(text=f"Material: R$ {custo_mat:.2f} | Máquina: R$ {custo_maq:.2f}")
+            self.lbl_detalhes.configure(text=f"Material: R$ {custo_mat:.2f} | Máquina: R$ {custo_maq:.2f} | Setup: R$ {v_setup:.2f}")
             self.lbl_res.configure(text=f"Venda Total: R$ {total_venda:.2f}")
             self.lbl_unitario.configure(text=f"Preço Unitário: R$ {valor_un:.2f}")
 
             if salvar:
                 if peso_t > f[1]: return messagebox.showerror("Erro", "Filamento insuficiente!")
-                
-                # Baixa filamento e atualiza estoque de peças
                 db.execute("UPDATE filamento SET quantidade_g = quantidade_g - ? WHERE id=?", (peso_t, id_f))
-                
                 existe = db.query("SELECT id FROM produtos WHERE nome=?", (nome,))
                 if existe:
                     p_id = existe[0][0]
                     db.execute("""UPDATE produtos SET quantidade=quantidade+?, preco_sugerido=?, 
                                valor_total_producao=valor_total_producao+?, peso_u=?, tempo_h=?, 
-                               hora_maq=?, margem=? WHERE id=?""", (qtd, valor_un, total_venda, peso_t, tempo_t, v_hm, margem, p_id))
+                               hora_maq=?, margem=? WHERE id=?""", (qtd, valor_un, total_venda, peso_t, tempo_t, v_hm, markup, p_id))
                 else:
                     db.execute("""INSERT INTO produtos (nome, quantidade, preco_sugerido, valor_total_producao, peso_u, tempo_h, hora_maq, margem) 
-                               VALUES (?,?,?,?,?,?,?,?)""", (nome, qtd, valor_un, total_venda, peso_t, tempo_t, v_hm, margem))
+                               VALUES (?,?,?,?,?,?,?,?)""", (nome, qtd, valor_un, total_venda, peso_t, tempo_t, v_hm, markup))
                     p_id = db.query("SELECT last_insert_rowid()")[0][0]
 
                 db.execute("INSERT INTO historico_producao (produto_id, filamento_id, peso_usado) VALUES (?,?,?)", (p_id, id_f, peso_t))
