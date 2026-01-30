@@ -5,6 +5,7 @@ from feats.estoque import AbaEstoque
 from feats.vendas import AbaVendas
 from feats.dashboard import AbaDashboard
 from feats.reparos import AbaReparos
+from feats.financeiro import AbaFinanceiro
 
 class ERP3D(ctk.CTk):
     def __init__(self):
@@ -23,6 +24,7 @@ class ERP3D(ctk.CTk):
         self.t_calc = self.tabs.add("Produção")
         self.t_vend = self.tabs.add("Vendas")
         self.t_rep = self.tabs.add("Reparos")
+        self.t_fin = self.tabs.add("Financeiro")
 
         # Inicializando as telas
         self.tela_dash = AbaDashboard(self.t_dash)
@@ -40,12 +42,16 @@ class ERP3D(ctk.CTk):
         self.tela_rep = AbaReparos(self.t_rep, self.atualizar)
         self.tela_rep.pack(fill="both", expand=True)
 
+        self.tela_fin = AbaFinanceiro(self.t_fin, self.atualizar)
+        self.tela_fin.pack(fill="both", expand=True)
+
     def atualizar(self):
         """Função que todas as abas chamam para manter os dados sincronizados"""
         self.tela_dash.refresh()
         self.tela_est.refresh()
         self.tela_vend.atualizar_vendas()
         self.tela_rep.atualizar_tabela()
+        self.tela_fin.atualizar_tabela()
         # Atualiza os menus de seleção na calculadora
         self.tela_calc.combo_mat.configure(values=self.tela_calc.get_mats())
         self.tela_calc.combo_projetos.configure(values=self.tela_calc.get_lista_projetos())
