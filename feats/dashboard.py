@@ -9,19 +9,17 @@ class AbaDashboard(ctk.CTkScrollableFrame):
     def __init__(self, master):
         super().__init__(master, fg_color="transparent")
         
-        ctk.CTkLabel(self, text="📊 ANÁLISE GERAL DE PRODUÇÃO", font=("Arial", 24, "bold")).pack(pady=20)
+        ctk.CTkLabel(self, text="📊 DASHBOARD ESTRATÉGICO", font=("Arial", 24, "bold")).pack(pady=20)
         
-        # --- CARDS DE KPI ---
+        # --- CARDS DE KPI (Atualizados para o novo Financeiro) ---
         self.frame_cards_master = ctk.CTkFrame(self, fg_color="transparent")
         self.frame_cards_master.pack(fill="x", padx=20, pady=10)
         
-        self.card_vendas = self.criar_card(self.frame_cards_master, "Faturamento Total", "R$ 0,00", "#2ecc71")
-        self.card_pecas = self.criar_card(self.frame_cards_master, "Peças em Estoque", "0 un", "#3498db")
-        self.card_filamento_total = self.criar_card(self.frame_cards_master, "Filamento Total (g)", "0 g", "#f1c40f")
-        self.card_tipos_filamento = self.criar_card(self.frame_cards_master, "Tipos de Materiais", "0", "#9b59b6")
+        self.card_lucro = self.criar_card(self.frame_cards_master, "Saldo em Caixa (Lucro)", "R$ 0,00", "#2ecc71")
+        self.card_saidas = self.criar_card(self.frame_cards_master, "Total de Investimento", "R$ 0,00", "#e74c3c")
+        self.card_filamento_real = self.criar_card(self.frame_cards_master, "Estoque Real (g)", "0 g", "#f1c40f")
+        self.card_vendas_qtd = self.criar_card(self.frame_cards_master, "Vendas Realizadas", "0", "#3498db")
 
-        # --- CONTAINER DE GRÁFICOS (Vertical) ---
-        # Removido pack_propagate para permitir que o scroll funcione conforme os gráficos são adicionados
         self.frame_graficos = ctk.CTkFrame(self, fg_color="transparent")
         self.frame_graficos.pack(fill="both", expand=True, padx=20, pady=20)
         
@@ -38,50 +36,56 @@ class AbaDashboard(ctk.CTkScrollableFrame):
     def refresh(self):
         try:
             conn = sqlite3.connect(db.DB_PATH)
+            # Carregando as novas tabelas
             df_vendas = pd.read_sql_query("SELECT * FROM vendas", conn)
-            df_produtos = pd.read_sql_query("SELECT * FROM produtos", conn)
             df_filamento = pd.read_sql_query("SELECT * FROM filamento", conn)
+            df_financeiro = pd.read_sql_query("SELECT * FROM financeiro", conn)
             conn.close()
 
-            # Atualiza Cards
-            faturamento = df_vendas['valor_total'].sum() if not df_vendas.empty else 0
-            total_pecas = df_produtos['quantidade'].sum() if not df_produtos.empty else 0
-            total_gramas = df_filamento['quantidade_g'].sum() if not df_filamento.empty else 0
-            qtd_tipos = df_filamento['material'].nunique() if not df_filamento.empty else 0
+            # --- CÁLCULO DOS CARDS ---
+            entradas = df_financeiro[df_financeiro['tipo'] == 'ENTRADA']['valor'].sum()
+            saidas = df_financeiro[df_financeiro['tipo'] == 'SAIDA']['valor'].sum()
+            saldo_caixa = entradas - saidas
+            
+            # Peso atual (o que sobrou nos rolos)
+            peso_real = df_filamento['peso_atual_g'].sum() if not df_filamento.empty else 0
+            qtd_vendas = len(df_vendas)
 
-            self.card_vendas.configure(text=f"R$ {faturamento:.2f}")
-            self.card_pecas.configure(text=f"{int(total_pecas)} un")
-            self.card_filamento_total.configure(text=f"{total_gramas:.0f} g")
-            self.card_tipos_filamento.configure(text=f"{int(qtd_tipos)} tipos")
+            self.card_lucro.configure(text=f"R$ {saldo_caixa:.2f}")
+            self.card_saidas.configure(text=f"R$ {saidas:.2f}")
+            self.card_filamento_real.configure(text=f"{peso_real:.0f} g")
+            self.card_vendas_qtd.configure(text=f"{qtd_vendas}")
 
-            # Limpa o container
+            # Limpa gráficos antigos
             for widget in self.frame_graficos.winfo_children(): 
                 widget.destroy()
             
             plt.style.use('dark_background')
 
-            # --- GRÁFICO 1: BARRAS (TOPO) ---
+            # --- GRÁFICO 1: SAÚDE DO ESTOQUE (Saldo Atual por Rolo) ---
             if not df_filamento.empty:
-                # Aumentamos a largura (figsize) já que ele ocupa a tela toda
-                fig1, ax1 = plt.subplots(figsize=(10, 5)) 
-                df_f_plot = df_filamento.sort_values('quantidade_g', ascending=False).head(10)
+                fig1, ax1 = plt.subplots(figsize=(10, 4)) 
+                # Criamos um nome amigável: Material + Cor
+                df_filamento['desc'] = df_filamento['material'] + " " + df_filamento['cor']
                 
-                ax1.bar(df_f_plot['material'], df_f_plot['quantidade_g'], color='#f1c40f')
-                ax1.set_title("Estoque por Material (Gramas)", fontsize=16, pad=20)
-                plt.xticks(rotation=30, ha='right', fontsize=11)
+                ax1.bar(df_filamento['desc'], df_filamento['peso_atual_g'], color='#3498db')
+                ax1.axhline(y=100, color='r', linestyle='--', label='Alerta (100g)') # Linha de alerta
+                ax1.set_title("Nível de Estoque Real por Rolo (g)", fontsize=14)
+                plt.xticks(rotation=20, ha='right')
                 plt.tight_layout()
 
                 canvas1 = FigureCanvasTkAgg(fig1, self.frame_graficos)
-                canvas1.get_tk_widget().pack(fill="x", pady=(0, 30))
+                canvas1.get_tk_widget().pack(fill="x", pady=20)
 
-            # --- GRÁFICO 2: PIZZA (EMBAIXO) ---
-            if not df_vendas.empty:
-                fig2, ax2 = plt.subplots(figsize=(10, 6))
-                vendas_resumo = df_vendas.groupby('produto_nome')['valor_total'].sum().sort_values(ascending=False).head(7)
+            # --- GRÁFICO 2: ENTRADAS VS SAÍDAS NO TEMPO ---
+            if not df_financeiro.empty:
+                fig2, ax2 = plt.subplots(figsize=(10, 4))
+                df_financeiro['data'] = pd.to_datetime(df_financeiro['data'])
+                # Agrupa por dia e tipo
+                resumo_fin = df_financeiro.groupby([df_financeiro['data'].dt.date, 'tipo'])['valor'].sum().unstack().fillna(0)
                 
-                # Pizza com layout mais limpo
-                ax2.pie(vendas_resumo, labels=vendas_resumo.index, autopct='%1.1f%%', startangle=140, textprops={'fontsize': 10})
-                ax2.set_title("Ranking de Faturamento por Produto", fontsize=16, pad=20)
+                resumo_fin.plot(kind='line', marker='o', ax=ax2, color=['#2ecc71', '#e74c3c'])
+                ax2.set_title("Movimentação Financeira (Entradas vs Saídas)", fontsize=14)
                 plt.tight_layout()
 
                 canvas2 = FigureCanvasTkAgg(fig2, self.frame_graficos)
