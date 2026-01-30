@@ -6,7 +6,8 @@ from feats.vendas import AbaVendas
 from feats.dashboard import AbaDashboard
 from feats.reparos import AbaReparos
 from feats.financeiro import AbaFinanceiro
-
+import os
+os.environ["QT_LOGGING_RULES"] = "*.debug=false;qt.qpa.window=false"
 class ERP3D(ctk.CTk):
     def __init__(self):
         super().__init__()

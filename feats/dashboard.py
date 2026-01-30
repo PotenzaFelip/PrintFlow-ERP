@@ -177,8 +177,9 @@ class AbaDashboard(ctk.CTkScrollableFrame):
                 defaultextension=".xlsx",
                 filetypes=[("Excel files", "*.xlsx")],
                 title="Salvar Relatório Geral",
-                initialfile=f"Relatorio_Gestao_{datetime.now().strftime('%Y%m%d')}.xlsx"
+                initialfile=f"Relatorio_Gestao_3D_{datetime.now().strftime('%Y%m%d')}.xlsx"
             )
+
             if not caminho_arquivo: return
 
             import sqlite3
@@ -186,32 +187,73 @@ class AbaDashboard(ctk.CTkScrollableFrame):
             
             conn = sqlite3.connect(db.DB_PATH)
             
+            # 1. Queries com JOINs para trocar IDs por Nomes Reais
             sql_vendas = """
-                SELECT v.id, p.nome as Produto, f.material || ' ' || f.cor as Filamento, 
-                v.qtd_vendida, v.valor_total, v.data FROM vendas v
+                SELECT 
+                    v.id AS 'ID Venda',
+                    p.nome AS 'Produto',
+                    f.material || ' ' || f.cor AS 'Filamento Utilizado',
+                    v.qtd_vendida AS 'Quantidade',
+                    v.valor_total AS 'Valor Total (R$)',
+                    v.data AS 'Data da Venda'
+                FROM vendas v
                 JOIN produtos p ON v.produto_id = p.id
                 JOIN filamento f ON v.filamento_id = f.id
             """
             
+            # Carregar dados do Banco
             tabelas = {
-                'Vendas': pd.read_sql_query(sql_vendas, conn),
-                'Financeiro': pd.read_sql_query("SELECT * FROM financeiro", conn),
-                'Estoque': pd.read_sql_query("SELECT material, cor, peso_atual_g FROM filamento", conn),
-                'Produtos': pd.read_sql_query("SELECT nome, preco_sugerido FROM produtos", conn)
+                'Resumo': None, # Criado abaixo
+                'Vendas Detalhadas': pd.read_sql_query(sql_vendas, conn),
+                'Fluxo de Caixa': pd.read_sql_query("SELECT id, tipo, valor, descricao, data FROM financeiro", conn),
+                'Estoque Atual': pd.read_sql_query("SELECT material, cor, peso_atual_g, preco_por_g FROM filamento", conn),
+                'Catálogo de Produtos': pd.read_sql_query("SELECT nome, peso_u, tempo_h, preco_sugerido FROM produtos", conn),
+                'Manutenções': pd.read_sql_query("SELECT * FROM reparos", conn)
             }
+            
+            # Criar DataFrame de Resumo (KPIs)
+            fin = tabelas['Fluxo de Caixa']
+            e = fin[fin['tipo'] == 'ENTRADA']['valor'].sum()
+            s = fin[fin['tipo'] == 'SAIDA']['valor'].sum()
+            tabelas['Resumo'] = pd.DataFrame({
+                "Indicador Estratégico": ["Faturamento Total", "Custos Totais (Investimento)", "Lucro Líquido Real", "Total de Vendas Realizadas"],
+                "Valor": [f"R$ {e:.2f}", f"R$ {s:.2f}", f"R$ {e-s:.2f}", f"{len(tabelas['Vendas Detalhadas'])} unidades"]
+            })
+
             conn.close()
 
+            # 2. Gravar no Excel com Estilização Profissional
             with pd.ExcelWriter(caminho_arquivo, engine='openpyxl') as writer:
-                for nome, df in tabelas.items():
-                    df.to_excel(writer, sheet_name=nome, index=False)
-                    ws = writer.sheets[nome]
-                    for cell in ws[1]:
-                        cell.font = Font(bold=True, color="FFFFFF")
-                        cell.fill = PatternFill(start_color="2980B9", end_color="2980B9", fill_type="solid")
-                    # Ajuste de colunas simplificado
-                    for col in ws.columns:
-                        ws.column_dimensions[col[0].column_letter].width = 15
-            
-            messagebox.showinfo("Sucesso", "Excel exportado com sucesso!")
+                for nome_aba, df in tabelas.items():
+                    df.to_excel(writer, sheet_name=nome_aba, index=False)
+                    
+                    worksheet = writer.sheets[nome_aba]
+                    
+                    # Estilo do Cabeçalho
+                    header_fill = PatternFill(start_color="3498DB", end_color="3498DB", fill_type="solid")
+                    header_font = Font(color="FFFFFF", bold=True)
+                    
+                    # Ajuste Automático de Largura e Aplicação de Estilo
+                    for col in worksheet.columns:
+                        max_length = 0
+                        column_letter = col[0].column_letter
+                        
+                        for cell in col:
+                            # Formatação do cabeçalho
+                            if cell.row == 1:
+                                cell.fill = header_fill
+                                cell.font = header_font
+                            
+                            # Cálculo da largura
+                            try:
+                                if len(str(cell.value)) > max_length:
+                                    max_length = len(str(cell.value))
+                            except: pass
+                        
+                        adjusted_width = (max_length + 4)
+                        worksheet.column_dimensions[column_letter].width = adjusted_width
+
+            messagebox.showinfo("Sucesso", "Relatório Gerencial gerado com nomes reais e visual profissional!")
+
         except Exception as e:
-            messagebox.showerror("Erro", f"Falha ao exportar: {e}")
+            messagebox.showerror("Erro", f"Falha ao gerar Excel: {e}")
