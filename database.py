@@ -10,10 +10,9 @@ def init_db():
     
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
-        # Ativa suporte a chaves estrangeiras
         cursor.execute("PRAGMA foreign_keys = ON;")
         
-        # 1. FILAMENTOS (Adicionado custo_compra para o financeiro)
+        # 1. FILAMENTOS
         cursor.execute("""CREATE TABLE IF NOT EXISTS filamento (
             id INTEGER PRIMARY KEY AUTOINCREMENT, 
             material TEXT NOT NULL, 
@@ -24,18 +23,17 @@ def init_db():
             custo_compra REAL DEFAULT 0.0,
             data_compra TIMESTAMP DEFAULT CURRENT_TIMESTAMP)""")
         
-        # 2. PRODUTOS (Catálogo/Configuração)
+        # 2. PRODUTOS (Removido Markup e Setup)
         cursor.execute("""CREATE TABLE IF NOT EXISTS produtos (
             id INTEGER PRIMARY KEY AUTOINCREMENT, 
             nome TEXT NOT NULL, 
             peso_u REAL NOT NULL, 
-            tempo_h REAL NOT NULL, 
+            tempo_h REAL NOT NULL,
+            quantidade_produzida INTEGER DEFAULT 1,
             hora_maq REAL, 
-            margem REAL,
-            setup_valor REAL DEFAULT 10.0,
             preco_sugerido REAL)""")
         
-        # 3. VENDAS (Relacionada ao produto e ao filamento usado)
+        # 3. VENDAS
         cursor.execute("""CREATE TABLE IF NOT EXISTS vendas (
             id INTEGER PRIMARY KEY AUTOINCREMENT, 
             produto_id INTEGER, 
@@ -46,7 +44,7 @@ def init_db():
             FOREIGN KEY (produto_id) REFERENCES produtos(id),
             FOREIGN KEY (filamento_id) REFERENCES filamento(id))""")
         
-        # 4. FINANCEIRO (Onde tudo se encontra)
+        # 4. FINANCEIRO
         cursor.execute("""CREATE TABLE IF NOT EXISTS financeiro (
             id INTEGER PRIMARY KEY AUTOINCREMENT, 
             tipo TEXT CHECK(tipo IN ('ENTRADA', 'SAIDA')), 
@@ -58,7 +56,7 @@ def init_db():
             FOREIGN KEY (venda_id) REFERENCES vendas(id) ON DELETE SET NULL,
             FOREIGN KEY (filamento_id) REFERENCES filamento(id) ON DELETE SET NULL)""")
         
-        # 5. REPAROS E MANUTENÇÃO
+        # 5. REPAROS
         cursor.execute("""CREATE TABLE IF NOT EXISTS reparos (
             id INTEGER PRIMARY KEY AUTOINCREMENT, 
             descricao TEXT NOT NULL, 
@@ -67,23 +65,17 @@ def init_db():
 
         # --- TRIGGERS DE AUTOMAÇÃO ---
 
-        # Trigger 1: Quando vender, baixa estoque e cria entrada financeira
+        # Trigger 1: APENAS lança entrada financeira na Venda (Baixa de estoque agora é manual no Python)
         cursor.execute("""
         CREATE TRIGGER IF NOT EXISTS tg_venda_processada
         AFTER INSERT ON vendas
         BEGIN
-            -- Baixa no estoque de filamento
-            UPDATE filamento 
-            SET peso_atual_g = peso_atual_g - (SELECT peso_u FROM produtos WHERE id = NEW.produto_id) * NEW.qtd_vendida
-            WHERE id = NEW.filamento_id;
-            
-            -- Lança entrada no financeiro
             INSERT INTO financeiro (tipo, valor, descricao, venda_id)
             VALUES ('ENTRADA', NEW.valor_total, 'Venda: ' || (SELECT nome FROM produtos WHERE id = NEW.produto_id), NEW.id);
         END;
         """)
 
-        # Trigger 2: Quando comprar filamento, lança saída no financeiro
+        # Trigger 2: Lança saída financeira na Compra de Filamento
         cursor.execute("""
         CREATE TRIGGER IF NOT EXISTS tg_compra_filamento
         AFTER INSERT ON filamento
@@ -93,13 +85,13 @@ def init_db():
         END;
         """)
 
-        # Trigger 3: Para lançar o custo do reparo no Financeiro
+        # Trigger 3: Lança saída financeira no Reparo
         cursor.execute("""
         CREATE TRIGGER IF NOT EXISTS tg_reparo_financeiro
         AFTER INSERT ON reparos
         BEGIN
             INSERT INTO financeiro (tipo, valor, descricao, data)
-            VALUES ('SAIDA', NEW.custo, 'Manutenção/Reparo: ' || NEW.descricao, NEW.data);
+            VALUES ('SAIDA', NEW.custo, 'Manutenção: ' || NEW.descricao, NEW.data);
         END;
         """)
         
@@ -107,7 +99,7 @@ def init_db():
 
 def query(sql, params=()):
     with sqlite3.connect(DB_PATH) as conn:
-        conn.row_factory = sqlite3.Row # Permite acessar colunas pelo nome
+        conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         cursor.execute(sql, params)
         return cursor.fetchall()
