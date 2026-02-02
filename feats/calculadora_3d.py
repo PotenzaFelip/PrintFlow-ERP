@@ -24,7 +24,7 @@ class AbaCalculadora(ctk.CTkScrollableFrame):
         self.combo_mat = ctk.CTkOptionMenu(self.frame_sel, values=self.get_mats(), width=200, fg_color="#27ae60")
         self.combo_mat.grid(row=1, column=1, padx=10, pady=5)
 
-        # --- INPUTS DE CUSTO ---
+        # --- INPUTS ---
         self.ent_nome = self.add_i("Nome do Projeto:", "Novo Projeto")
         self.ent_qtd = self.add_i("Qtd de Peças na Impressão:", "1")
         self.ent_peso_total = self.add_i("Peso TOTAL da Bandeja (g):", "0")
@@ -54,81 +54,85 @@ class AbaCalculadora(ctk.CTkScrollableFrame):
     def get_lista_projetos(self):
         try:
             res = db.query("SELECT nome FROM produtos")
-            return ["Novo Projeto"] + [p['nome'] for p in res]
+            return ["Novo Projeto"] + [(p['nome'] if isinstance(p, dict) else p[0]) for p in res]
         except: return ["Novo Projeto"]
 
     def get_mats(self):
         try:
             mats = db.query("SELECT material, cor, id FROM filamento WHERE peso_atual_g > 0")
-            return [f"{m['material']} {m['cor']} | ID:{m['id']}" for m in mats] if mats else ["Sem Filamento"]
+            return [f"{m['material'] if isinstance(m, dict) else m[0]} {m['cor'] if isinstance(m, dict) else m[1]} | ID:{m['id'] if isinstance(m, dict) else m[2]}" for m in mats] if mats else ["Sem Filamento"]
         except: return ["Sem Filamento"]
 
     def carregar(self, n):
         if n == "Novo Projeto": return
         try:
-            d = db.query("SELECT * FROM produtos WHERE nome=?", (n,))[0]
-            self.ent_nome.delete(0, 'end'); self.ent_nome.insert(0, str(d['nome']))
-            self.ent_peso_total.delete(0, 'end'); self.ent_peso_total.insert(0, str(d['peso_u']))
-            self.ent_horas.delete(0, 'end'); self.ent_horas.insert(0, str(d['tempo_h']))
-            self.ent_hm.delete(0, 'end'); self.ent_hm.insert(0, str(d['hora_maq']))
+            res = db.query("SELECT * FROM produtos WHERE nome=?", (n,))
+            if res:
+                d = res[0]
+                # Indices baseados em: id, nome, peso_u, tempo_h, quantidade_produzida, hora_maq, preco_sugerido
+                self.ent_nome.delete(0, 'end'); self.ent_nome.insert(0, str(d['nome'] if isinstance(d, dict) else d[1]))
+                self.ent_peso_total.delete(0, 'end'); self.ent_peso_total.insert(0, str(d['peso_u'] if isinstance(d, dict) else d[2]))
+                self.ent_horas.delete(0, 'end'); self.ent_horas.insert(0, str(d['tempo_h'] if isinstance(d, dict) else d[3]))
+                self.ent_qtd.delete(0, 'end'); self.ent_qtd.insert(0, str(d['quantidade_produzida'] if isinstance(d, dict) else d[4]))
+                self.ent_hm.delete(0, 'end'); self.ent_hm.insert(0, str(d['hora_maq'] if isinstance(d, dict) else d[5]))
+                self.calc(registrar=False)
         except: pass
 
     def calc(self, registrar):
         try:
-            # 1. Obter Dados do Filamento
+            # 1. Identificação
             txt_mat = self.combo_mat.get()
-            if "ID:" not in txt_mat: 
-                return messagebox.showerror("Erro", "Selecione o filamento!")
+            if "ID:" not in txt_mat: return
+            id_f = int(txt_mat.split("ID:")[1].strip())
             
-            id_f = txt_mat.split("ID:")[1]
-            f_dados = db.query("SELECT preco_por_g, peso_atual_g FROM filamento WHERE id=?", (id_f,))
-            if not f_dados:
-                return messagebox.showerror("Erro", "Filamento não encontrado!")
-            f = f_dados[0]
-
-            # 2. Obter e Tratar Inputs
+            # 2. Captura de Inputs
             qtd = int(self.ent_qtd.get() or 1)
-            peso_t = float(self.ent_peso_total.get().replace(",", "."))
+            peso_bandeja = float(self.ent_peso_total.get().replace(",", "."))
             tempo_t = float(self.ent_horas.get().replace(",", "."))
             v_hm = float(self.ent_hm.get().replace(",", "."))
 
-            # 3. Cálculos
-            custo_mat = peso_t * f['preco_por_g']
-            custo_maq = tempo_t * v_hm
-            custo_total = custo_mat + custo_maq
-            valor_un = custo_total / qtd
+            # 3. Busca Dados
+            res = db.query("SELECT preco_por_g, peso_atual_g FROM filamento WHERE id=?", (id_f,))
+            preco_g = float(res[0]['preco_por_g'] if isinstance(res[0], dict) else res[0][0])
+            saldo_atual = float(res[0]['peso_atual_g'] if isinstance(res[0], dict) else res[0][1])
 
-            # Atualizar Labels
+            # Cálculos
+            custo_mat = round(peso_bandeja * preco_g, 2)
+            custo_maq = round(tempo_t * v_hm, 2)
+            total = round(custo_mat + custo_maq, 2)
+            unid = round(total / qtd, 2)
+
             self.lbl_detalhes.configure(text=f"Material: R$ {custo_mat:.2f} | Máquina: R$ {custo_maq:.2f}")
-            self.lbl_res.configure(text=f"Custo Total: R$ {custo_total:.2f}")
-            self.lbl_unitario.configure(text=f"Custo Unitário: R$ {valor_un:.2f}")
+            self.lbl_res.configure(text=f"Custo Total: R$ {total:.2f}")
+            self.lbl_unitario.configure(text=f"Custo Unitário: R$ {unid:.2f}")
 
             if registrar:
-                if peso_t > f['peso_atual_g']:
-                    return messagebox.showerror("Erro", f"Estoque insuficiente! Disponível: {f['peso_atual_g']}g")
+                if peso_bandeja > (saldo_atual + 0.01): # Margem para erro de arredondamento
+                    return messagebox.showerror("Erro", "Estoque insuficiente!")
 
-                nome = self.ent_nome.get()
-                peso_u_calc = peso_t / qtd
-                tempo_u_calc = tempo_t / qtd 
+                if not messagebox.askyesno("Confirmar", f"Descontar {peso_bandeja}g?"):
+                    return
 
-                # --- 1. GARANTIR QUE O PRODUTO EXISTE E PEGAR O ID ---
-                # Em vez de SELECT e depois INSERT, usamos uma lógica mais robusta
-                db.execute("""INSERT OR REPLACE INTO produtos (id, nome, peso_u, tempo_h, hora_maq, preco_sugerido) 
-                              VALUES ((SELECT id FROM produtos WHERE nome = ?), ?, ?, ?, ?, ?)""",
-                           (nome, nome, peso_u_calc, tempo_u_calc, v_hm, valor_un))
+                nome_p = self.ent_nome.get()
+                novo_saldo = round(saldo_atual - peso_bandeja, 2)
+
+                # A. ATUALIZA ESTOQUE NO PYTHON (Sem dupla cobrança do banco)
+                db.execute("UPDATE filamento SET peso_atual_g = ? WHERE id = ?", (novo_saldo, id_f))
+
+                # B. SALVA PRODUTO
+                db.execute("""INSERT OR REPLACE INTO produtos 
+                              (id, nome, peso_u, tempo_h, quantidade_produzida, hora_maq, preco_sugerido) 
+                              VALUES ((SELECT id FROM produtos WHERE nome = ?), ?, ?, ?, ?, ?, ?)""",
+                           (nome_p, nome_p, peso_bandeja, tempo_t, qtd, v_hm, total))
                 
-                # Busca o ID de forma garantida após o INSERT/REPLACE
-                p_id = db.query("SELECT id FROM produtos WHERE nome=?", (nome,))[0]['id']
-
-                # --- 2. REGISTRAR A VENDA ---
+                # C. REGISTRA VENDA (O Trigger novo agora só mexe no financeiro)
+                p_res = db.query("SELECT id FROM produtos WHERE nome=?", (nome_p,))
+                p_id = p_res[0]['id'] if isinstance(p_res[0], dict) else p_res[0][0]
                 db.execute("INSERT INTO vendas (produto_id, filamento_id, qtd_vendida, valor_total) VALUES (?,?,?,?)", 
-                           (p_id, id_f, qtd, custo_total))
+                           (p_id, id_f, qtd, total))
 
-                messagebox.showinfo("Sucesso", "Operação Realizada!")
-                
-                # Atualiza componentes
-                self.combo_projetos.configure(values=self.get_lista_projetos())
+                messagebox.showinfo("Sucesso", f"Saldo atualizado: {novo_saldo}g")
                 self.refresh_callback()
 
         except Exception as e:
-            messagebox.showerror("Erro", f"Erro no processamento: {e}")
+            messagebox.showerror("Erro", f"Erro: {e}")

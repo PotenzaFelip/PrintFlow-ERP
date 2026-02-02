@@ -92,7 +92,6 @@ class AbaDashboard(ctk.CTkScrollableFrame):
 
             conn = sqlite3.connect(db.DB_PATH)
             df_financeiro = pd.read_sql_query(f"SELECT * FROM financeiro WHERE data >= '{d_ini}' AND data <= '{d_fim_completo}'", conn)
-            # Buscamos TODOS os filamentos sem limite
             df_filamento = pd.read_sql_query("SELECT material, cor, peso_atual_g FROM filamento ORDER BY material ASC", conn)
             df_vendas = pd.read_sql_query(f"SELECT id FROM vendas WHERE data >= '{d_ini}' AND data <= '{d_fim_completo}'", conn)
             conn.close()
@@ -108,57 +107,61 @@ class AbaDashboard(ctk.CTkScrollableFrame):
             for w in self.frame_graficos.winfo_children(): w.destroy()
             plt.style.use('dark_background')
 
-            # --- GRÁFICO 1: ESTOQUE (CORRIGIDO PARA MOSTRAR TODOS) ---
+            # --- GRÁFICO 1: ESTOQUE (Mantido) ---
             if not df_filamento.empty:
-                # Aumentamos a largura (figsize) de 10 para 12 para caber os 13 itens
                 fig1, ax1 = plt.subplots(figsize=(12, 4))
-                
-                # Criamos as legendas combinando Material e Cor
                 labels = [f"{self.abreviar(r['material'], 8)}\n{self.abreviar(r['cor'], 6)}" for _, r in df_filamento.iterrows()]
                 cores = ['#e74c3c' if x < 200 else '#3498db' for x in df_filamento['peso_atual_g']]
-                
                 bars = ax1.bar(labels, df_filamento['peso_atual_g'], color=cores)
-                
-                # Adiciona o valor exato em cima de cada barra para facilitar a leitura
                 ax1.bar_label(bars, padding=3, fontsize=8)
-                
                 ax1.set_title("Volume em Estoque por Filamento (g)", fontsize=12, pad=20)
-                
-                # ROTACIONA as legendas para caberem os 13 itens
                 plt.xticks(rotation=45, ha='right', fontsize=9)
-                
-                # Ajusta o espaço inferior para a legenda rotacionada não sumir
                 plt.subplots_adjust(bottom=0.3)
-                
                 FigureCanvasTkAgg(fig1, self.frame_graficos).get_tk_widget().pack(fill="x", pady=10)
 
-            # --- GRÁFICO 2: FLUXO DIÁRIO ---
+            # --- PROCESSAMENTO FINANCEIRO SEM ZERAR DATAS VAZIAS ---
             if not df_financeiro.empty:
                 df_financeiro['data_dt'] = pd.to_datetime(df_financeiro['data']).dt.date
+                # Agrupa apenas datas existentes
                 resumo = df_financeiro.groupby(['data_dt', 'tipo'])['valor'].sum().unstack().fillna(0)
                 resumo = resumo.sort_index()
 
                 for col in ['ENTRADA', 'SAIDA']:
                     if col not in resumo: resumo[col] = 0.0
 
+                # --- GRÁFICO 2: FLUXO DIÁRIO ---
                 fig2, ax2 = plt.subplots(figsize=(10, 4))
+                # marker='' remove as bolinhas se preferir uma linha limpa, ou use 'o' para destacar os dias com dados
                 resumo.plot(kind='line', marker='o', ax=ax2, color=['#2ecc71', '#e74c3c'], linewidth=2)
-                ax2.set_title("Fluxo Diário: Entradas vs Saídas", fontsize=11)
+                
+                ax2.set_title(f"Movimentações Reais no Período", fontsize=11)
+                
+                # Configuração do Eixo X para respeitar o filtro sem criar dados falsos
                 ax2.xaxis.set_major_formatter(mdates.DateFormatter('%d/%m'))
+                ax2.set_xlim([pd.to_datetime(d_ini), pd.to_datetime(d_fim)]) # Força o limite visual do gráfico
+                
                 plt.tight_layout()
                 FigureCanvasTkAgg(fig2, self.frame_graficos).get_tk_widget().pack(fill="x", pady=10)
 
                 # --- GRÁFICO 3: GASTOS ACUMULADOS ---
                 resumo['Gastos_Acumulados'] = resumo['SAIDA'].cumsum()
                 fig3, ax3 = plt.subplots(figsize=(10, 4))
-                ax3.fill_between(resumo.index, resumo['Gastos_Acumulados'], color='#e74c3c', alpha=0.3)
-                ax3.plot(resumo.index, resumo['Gastos_Acumulados'], color='#c0392b', marker='o', linewidth=2.5)
-                ax3.set_title("Total de Gastos Acumulados (R$)", fontsize=11, color="#e74c3c")
+                
+                # Plotamos apenas onde houve gasto (SAIDA > 0) para não ter escada reta infinita
+                df_gastos = resumo[resumo['SAIDA'] > 0]
+                
+                if not df_gastos.empty:
+                    ax3.fill_between(resumo.index, resumo['Gastos_Acumulados'], color='#e74c3c', alpha=0.3)
+                    ax3.plot(resumo.index, resumo['Gastos_Acumulados'], color='#c0392b', marker='o', linewidth=2.5)
+                
+                ax3.set_title("Evolução dos Gastos (R$)", fontsize=11, color="#e74c3c")
                 ax3.xaxis.set_major_formatter(mdates.DateFormatter('%d/%m'))
+                ax3.set_xlim([pd.to_datetime(d_ini), pd.to_datetime(d_fim)])
+                
                 plt.tight_layout()
                 FigureCanvasTkAgg(fig3, self.frame_graficos).get_tk_widget().pack(fill="x", pady=10)
             else:
-                ctk.CTkLabel(self.frame_graficos, text="🚫 Sem dados financeiros no período.").pack(pady=30)
+                ctk.CTkLabel(self.frame_graficos, text=f"🚫 Sem movimentações entre {d_ini} e {d_fim}.").pack(pady=30)
 
         except Exception as e:
             print(f"Erro Dashboard: {e}")

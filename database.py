@@ -28,7 +28,8 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT, 
             nome TEXT NOT NULL, 
             peso_u REAL NOT NULL, 
-            tempo_h REAL NOT NULL, 
+            tempo_h REAL NOT NULL,
+            quantidade_produzida INTEGER DEFAULT 1,
             hora_maq REAL, 
             preco_sugerido REAL)""")
         
@@ -64,15 +65,11 @@ def init_db():
 
         # --- TRIGGERS DE AUTOMAÇÃO ---
 
-        # Trigger 1: Baixa estoque e lança entrada financeira na Venda
+        # Trigger 1: APENAS lança entrada financeira na Venda (Baixa de estoque agora é manual no Python)
         cursor.execute("""
         CREATE TRIGGER IF NOT EXISTS tg_venda_processada
         AFTER INSERT ON vendas
         BEGIN
-            UPDATE filamento 
-            SET peso_atual_g = peso_atual_g - (SELECT peso_u FROM produtos WHERE id = NEW.produto_id) * NEW.qtd_vendida
-            WHERE id = NEW.filamento_id;
-            
             INSERT INTO financeiro (tipo, valor, descricao, venda_id)
             VALUES ('ENTRADA', NEW.valor_total, 'Venda: ' || (SELECT nome FROM produtos WHERE id = NEW.produto_id), NEW.id);
         END;
