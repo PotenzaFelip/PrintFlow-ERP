@@ -6,6 +6,7 @@ from feats.vendas import AbaVendas
 from feats.dashboard import AbaDashboard
 from feats.reparos import AbaReparos
 from feats.financeiro import AbaFinanceiro
+from feats.visualizador_3d import AbaVisualizadorSTL
 import os
 
 # Desativa logs desnecessários de bibliotecas gráficas
@@ -37,6 +38,7 @@ class ERP3D(ctk.CTk):
         self.t_vend = self.tabs.add("Vendas")
         self.t_rep  = self.tabs.add("Reparos")
         self.t_fin  = self.tabs.add("Financeiro")
+        self.t_3d = self.tabs.add("Visualizador 3D")
 
         # --- INICIALIZAÇÃO DAS TELAS ---
         # Passamos as abas como master. Cada classe (AbaEstoque, etc) 
@@ -59,6 +61,9 @@ class ERP3D(ctk.CTk):
 
         self.tela_fin = AbaFinanceiro(self.t_fin, self.atualizar)
         self.tela_fin.pack(fill="both", expand=True)
+
+        self.tela_3d = AbaVisualizadorSTL(self.t_3d)
+        self.tela_3d.pack(fill="both", expand=True)
 
         # Atualização inicial
         self.atualizar()
