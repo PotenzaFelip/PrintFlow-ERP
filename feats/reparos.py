@@ -2,7 +2,7 @@ import customtkinter as ctk
 from tkinter import ttk, messagebox
 import database as db
 
-class AbaReparos(ctk.CTkFrame):
+class AbaReparos(ctk.CTkScrollableFrame): # Alterado para Scrollable para consistência
     def __init__(self, master, refresh_callback):
         super().__init__(master, fg_color="transparent")
         self.refresh_cb = refresh_callback
@@ -41,17 +41,33 @@ class AbaReparos(ctk.CTkFrame):
         self.ent_busca.pack(fill="x", expand=True)
         self.ent_busca.bind("<KeyRelease>", lambda e: self.atualizar_tabela())
 
-        # --- TABELA (VISUAL BRANCO) ---
+        # --- TABELA COM BARRA DE ROLAGEM ---
+        self.container_tabela = ctk.CTkFrame(self)
+        self.container_tabela.pack(fill="both", expand=True, padx=20, pady=10)
+
+         # --- CONFIGURAÇÃO DA TABELA (FUNDO BRANCO) ---
         style = ttk.Style()
         style.theme_use("clam")
-        style.configure("Treeview", background="white", foreground="black", fieldbackground="white", rowheight=28)
-        style.map("Treeview", background=[('selected', '#3498db')], foreground=[('selected', 'white')])
+        style.configure("Treeview",background="white",foreground="black",fieldbackground="white",rowheight=28,borderwidth=0)
 
-        self.tree = ttk.Treeview(self, columns=("ID", "Descrição", "Custo", "Data"), show="headings", height=15)
+        style.configure("Treeview.Heading",background="#f0f0f0",foreground="black",relief="flat")
+
+        # Cor de quando você clica em uma linha
+        style.map("Treeview",background=[('selected', '#3498db')],foreground=[('selected', 'white')])
+
+        self.tree = ttk.Treeview(self.container_tabela, columns=("ID", "Descrição", "Custo", "Data"), show="headings", height=15)
+        
+        # Barra de rolagem dedicada para a Treeview
+        self.scrollbar = ctk.CTkScrollbar(self.container_tabela, orientation="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=self.scrollbar.set)
+
         for c in ("ID", "Descrição", "Custo", "Data"):
             self.tree.heading(c, text=c)
             self.tree.column(c, anchor="center")
-        self.tree.pack(fill="both", expand=True, padx=20, pady=10)
+        
+        # Posicionamento da scrollbar e tabela
+        self.scrollbar.pack(side="right", fill="y")
+        self.tree.pack(side="left", fill="both", expand=True)
 
         self.tree.bind("<<TreeviewSelect>>", self.preencher_campos)
         self.atualizar_tabela()
@@ -66,10 +82,8 @@ class AbaReparos(ctk.CTkFrame):
                 return messagebox.showerror("Erro", "A descrição é obrigatória.")
 
             if self.id_selecionado is None:
-                # INSERT
                 db.execute("INSERT INTO reparos (descricao, custo) VALUES (?, ?)", (desc, valor))
             else:
-                # UPDATE
                 db.execute("UPDATE reparos SET descricao=?, custo=? WHERE id=?", (desc, valor, self.id_selecionado))
 
             self.limpar_campos()
@@ -96,7 +110,7 @@ class AbaReparos(ctk.CTkFrame):
         self.ent_desc.delete(0, 'end')
         self.ent_desc.insert(0, item[1])
         self.ent_custo.delete(0, 'end')
-        self.ent_custo.insert(0, item[2])
+        self.ent_custo.insert(0, str(item[2]).replace("R$ ", ""))
         
         self.btn_salvar.configure(text="ATUALIZAR", fg_color="#3498db")
         self.btn_excluir.configure(state="normal")
@@ -115,8 +129,6 @@ class AbaReparos(ctk.CTkFrame):
             self.tree.delete(i)
         
         termo = f"%{self.ent_busca.get()}%"
-        
-        # Busca por descrição ou data
         query = "SELECT * FROM reparos WHERE descricao LIKE ? OR data LIKE ? ORDER BY id DESC"
         dados = db.query(query, (termo, termo))
         

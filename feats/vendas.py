@@ -2,7 +2,7 @@ import customtkinter as ctk
 from tkinter import ttk, messagebox
 import database as db
 
-class AbaVendas(ctk.CTkFrame):
+class AbaVendas(ctk.CTkScrollableFrame): # Alterado para Scrollable para garantir que os campos caibam em telas menores
     def __init__(self, master, refresh_callback):
         super().__init__(master, fg_color="transparent")
         self.refresh_cb = refresh_callback
@@ -48,16 +48,33 @@ class AbaVendas(ctk.CTkFrame):
         self.ent_busca.pack(fill="x", expand=True)
         self.ent_busca.bind("<KeyRelease>", lambda e: self.atualizar_vendas())
 
-        # --- TABELA DE HISTÓRICO ---
-        # Estilo para manter a tabela branca
-        style = ttk.Style()
-        style.configure("Treeview", background="white", foreground="black", fieldbackground="white", rowheight=28)
-        style.map("Treeview", background=[('selected', '#3498db')], foreground=[('selected', 'white')])
+        # --- TABELA DE HISTÓRICO COM BARRA DE ROLAGEM ---
+        self.container_tabela = ctk.CTkFrame(self)
+        self.container_tabela.pack(fill="both", expand=True, padx=20, pady=10)
 
-        self.tree = ttk.Treeview(self, columns=("ID", "Produto", "Filamento", "Qtd", "Total", "Data"), show="headings", height=12)
+         # --- CONFIGURAÇÃO DA TABELA (FUNDO BRANCO) ---
+        style = ttk.Style()
+        style.theme_use("clam")
+        style.configure("Treeview",background="white",foreground="black",fieldbackground="white",rowheight=28,borderwidth=0)
+
+        style.configure("Treeview.Heading",background="#f0f0f0",foreground="black",relief="flat")
+
+        # Cor de quando você clica em uma linha
+        style.map("Treeview",background=[('selected', '#3498db')],foreground=[('selected', 'white')])
+
+        self.tree = ttk.Treeview(self.container_tabela, columns=("ID", "Produto", "Filamento", "Qtd", "Total", "Data"), show="headings", height=12)
+        
+        # Criando a Scrollbar lateral
+        self.scrollbar = ctk.CTkScrollbar(self.container_tabela, orientation="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=self.scrollbar.set)
+
+        # Layout da Tabela e Scrollbar
+        self.scrollbar.pack(side="right", fill="y")
+        self.tree.pack(side="left", fill="both", expand=True)
+
         for c in ("ID", "Produto", "Filamento", "Qtd", "Total", "Data"): 
-            self.tree.heading(c, text=c); self.tree.column(c, width=120, anchor="center")
-        self.tree.pack(fill="both", expand=True, padx=20, pady=10)
+            self.tree.heading(c, text=c)
+            self.tree.column(c, width=120, anchor="center")
         
         self.atualizar_vendas()
 

@@ -2,7 +2,7 @@ import customtkinter as ctk
 from tkinter import ttk, messagebox
 import database as db
 
-class AbaFinanceiro(ctk.CTkFrame):
+class AbaFinanceiro(ctk.CTkScrollableFrame): # Alterado para Scrollable
     def __init__(self, master, refresh_callback):
         super().__init__(master, fg_color="transparent")
         self.refresh_cb = refresh_callback
@@ -21,7 +21,6 @@ class AbaFinanceiro(ctk.CTkFrame):
         self.frame_busca = ctk.CTkFrame(self)
         self.frame_busca.pack(fill="x", padx=20, pady=5)
         
-        # Filtro de Texto Dinâmico
         self.ent_busca = ctk.CTkEntry(self.frame_busca, placeholder_text="🔍 Pesquisar descrição ou data...", width=300)
         self.ent_busca.pack(side="left", padx=10, pady=10)
         self.ent_busca.bind("<KeyRelease>", lambda e: self.atualizar_tabela())
@@ -31,21 +30,37 @@ class AbaFinanceiro(ctk.CTkFrame):
                                              command=lambda _: self.atualizar_tabela())
         self.filtro_tipo.pack(side="left", padx=5)
 
-        ctk.CTkButton(self.frame_busca, text="🗑️ EXCLUIR REGISTRO", fg_color="#c0392b", command=self.excluir_registro).pack(side="right", padx=10)
+        ctk.CTkButton(self.frame_busca, text="🗑️ EXCLUIR", fg_color="#c0392b", width=100, command=self.excluir_registro).pack(side="right", padx=10)
 
-        # --- TABELA DE EXTRATO (BRANCA) ---
+        # --- TABELA COM BARRA DE ROLAGEM ---
+        self.container_tabela = ctk.CTkFrame(self)
+        self.container_tabela.pack(fill="both", expand=True, padx=20, pady=10)
+
+         # --- CONFIGURAÇÃO DA TABELA (FUNDO BRANCO) ---
         style = ttk.Style()
         style.theme_use("clam")
-        style.configure("Treeview", background="white", foreground="black", fieldbackground="white", rowheight=28)
-        style.map("Treeview", background=[('selected', '#3498db')], foreground=[('selected', 'white')])
+        style.configure("Treeview",background="white",foreground="black",fieldbackground="white",rowheight=28,borderwidth=0)
 
-        self.tree = ttk.Treeview(self, columns=("ID", "Tipo", "Valor", "Descrição", "Data"), show="headings", height=15)
+        style.configure("Treeview.Heading",background="#f0f0f0",foreground="black",relief="flat")
+
+        # Cor de quando você clica em uma linha
+        style.map("Treeview",background=[('selected', '#3498db')],foreground=[('selected', 'white')])
+
+        self.tree = ttk.Treeview(self.container_tabela, columns=("ID", "Tipo", "Valor", "Descrição", "Data"), show="headings", height=15)
+        
+        # Adicionando a Scrollbar
+        self.scrollbar = ctk.CTkScrollbar(self.container_tabela, orientation="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=self.scrollbar.set)
+
         for c in ("ID", "Tipo", "Valor", "Descrição", "Data"):
             self.tree.heading(c, text=c)
             self.tree.column(c, anchor="center", width=100)
         
         self.tree.column("Descrição", width=350, anchor="w") 
-        self.tree.pack(fill="both", expand=True, padx=20, pady=10)
+        
+        # Posicionamento da scrollbar e tabela
+        self.scrollbar.pack(side="right", fill="y")
+        self.tree.pack(side="left", fill="both", expand=True)
 
         self.atualizar_tabela()
 
@@ -58,15 +73,12 @@ class AbaFinanceiro(ctk.CTkFrame):
         return lbl
 
     def atualizar_tabela(self):
-        # 1. Limpar tabela
         for i in self.tree.get_children(): 
             self.tree.delete(i)
         
-        # 2. Captura Filtros
         tipo_filtro = self.filtro_tipo.get()
         termo_busca = f"%{self.ent_busca.get()}%"
 
-        # 3. Query Dinâmica
         query = "SELECT * FROM financeiro WHERE (descricao LIKE ? OR data LIKE ?)"
         params = [termo_busca, termo_busca]
 
@@ -75,24 +87,19 @@ class AbaFinanceiro(ctk.CTkFrame):
             params.append(tipo_filtro)
         
         query += " ORDER BY id DESC"
-        
         dados = db.query(query, tuple(params))
 
-        # 4. Cálculos e Preenchimento
         total_e = 0
         total_s = 0
 
         for r in dados:
             valor = r['valor']
-            if r['tipo'] == 'ENTRADA': 
-                total_e += valor
-            else: 
-                total_s += valor
+            if r['tipo'] == 'ENTRADA': total_e += valor
+            else: total_s += valor
             
             tag_valor = f"R$ {valor:.2f}"
             self.tree.insert("", "end", values=(r['id'], r['tipo'], tag_valor, r['descricao'], r['data']))
 
-        # 5. Atualizar Indicadores Superiores
         self.lbl_entradas.configure(text=f"R$ {total_e:.2f}")
         self.lbl_saidas.configure(text=f"R$ {total_s:.2f}")
         self.lbl_saldo.configure(text=f"R$ {(total_e - total_s):.2f}")
@@ -102,7 +109,6 @@ class AbaFinanceiro(ctk.CTkFrame):
         if not selecao:
             return messagebox.showwarning("Aviso", "Selecione um registro para excluir.")
         
-        # Mantido o askyesno por ser uma ação destrutiva crítica
         if messagebox.askyesno("Confirmar", "Deseja excluir este registro financeiro?"):
             try:
                 id_fin = self.tree.item(selecao[0])['values'][0]

@@ -108,7 +108,7 @@ class AbaDashboard(ctk.CTkScrollableFrame):
             for w in self.frame_graficos.winfo_children(): w.destroy()
             plt.style.use('dark_background')
 
-            # --- GRÁFICO 1: ESTOQUE ---
+            # --- GRÁFICO 1: ESTOQUE (BARRAS) ---
             if not df_filamento.empty:
                 fig1, ax1 = plt.subplots(figsize=(12, 4))
                 labels = [f"{self.abreviar(r['material'], 8)}\n{self.abreviar(r['cor'], 6)}" for _, r in df_filamento.iterrows()]
@@ -120,7 +120,7 @@ class AbaDashboard(ctk.CTkScrollableFrame):
                 plt.subplots_adjust(bottom=0.3)
                 FigureCanvasTkAgg(fig1, self.frame_graficos).get_tk_widget().pack(fill="x", pady=10)
 
-            # --- GRÁFICO 2: FLUXO FINANCEIRO ---
+            # --- PROCESSAMENTO PARA GRÁFICOS TEMPORAIS ---
             if not df_financeiro.empty:
                 df_financeiro['data_dt'] = pd.to_datetime(df_financeiro['data']).dt.date
                 resumo = df_financeiro.groupby(['data_dt', 'tipo'])['valor'].sum().unstack().fillna(0)
@@ -129,14 +129,32 @@ class AbaDashboard(ctk.CTkScrollableFrame):
                 for col in ['ENTRADA', 'SAIDA']:
                     if col not in resumo: resumo[col] = 0.0
 
+                # --- GRÁFICO 2: FLUXO DIÁRIO (LINHAS) ---
                 fig2, ax2 = plt.subplots(figsize=(10, 4))
                 resumo.plot(kind='line', marker='o', ax=ax2, color=['#2ecc71', '#e74c3c'], linewidth=2)
-                ax2.set_title(f"Movimentações Financeiras Reais", fontsize=11)
+                ax2.set_title(f"Movimentações Financeiras Diárias", fontsize=11)
                 ax2.xaxis.set_major_formatter(mdates.DateFormatter('%d/%m'))
                 ax2.set_xlim([pd.to_datetime(d_ini), pd.to_datetime(d_fim)])
-                
                 plt.tight_layout()
                 FigureCanvasTkAgg(fig2, self.frame_graficos).get_tk_widget().pack(fill="x", pady=10)
+
+                # --- GRÁFICO 3: GASTOS ACUMULADOS (ÁREA) ---
+                resumo['Gastos_Acumulados'] = resumo['SAIDA'].cumsum()
+                fig3, ax3 = plt.subplots(figsize=(10, 4))
+                
+                # Criar a área preenchida
+                ax3.fill_between(resumo.index, resumo['Gastos_Acumulados'], color='#e74c3c', alpha=0.2)
+                ax3.plot(resumo.index, resumo['Gastos_Acumulados'], color='#e74c3c', marker='s', linewidth=2, label="Total Gasto")
+                
+                ax3.set_title("Evolução Acumulada de Gastos (R$)", fontsize=11, color="#e74c3c")
+                ax3.xaxis.set_major_formatter(mdates.DateFormatter('%d/%m'))
+                ax3.set_xlim([pd.to_datetime(d_ini), pd.to_datetime(d_fim)])
+                ax3.grid(True, linestyle='--', alpha=0.3)
+                
+                plt.tight_layout()
+                FigureCanvasTkAgg(fig3, self.frame_graficos).get_tk_widget().pack(fill="x", pady=10)
+            else:
+                ctk.CTkLabel(self.frame_graficos, text=f"🚫 Sem dados financeiros para o período selecionado.").pack(pady=40)
 
         except Exception as e:
             print(f"Erro ao atualizar Dashboard: {e}")

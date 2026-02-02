@@ -206,13 +206,37 @@ class AbaEstoque(ctk.CTkScrollableFrame):
 
     def criar_tabela(self, cols, tit):
         ctk.CTkLabel(self, text=tit, font=("Arial", 15, "bold")).pack(pady=(10, 5))
-        t_frame = ctk.CTkFrame(self); t_frame.pack(fill="x", padx=30, pady=(0, 20))
-        style = ttk.Style(); style.theme_use("clam")
-        style.configure("Treeview", background="white", foreground="black", fieldbackground="white", rowheight=28)
-        style.map("Treeview", background=[('selected', '#3498db')], foreground=[('selected', 'white')])
+        
+        # Frame container da tabela
+        t_frame = ctk.CTkFrame(self)
+        t_frame.pack(fill="x", padx=30, pady=(0, 20))
+        
+        # --- CONFIGURAÇÃO DA TABELA (FUNDO BRANCO) ---
+        style = ttk.Style()
+        style.theme_use("clam")
+        style.configure("Treeview",background="white",foreground="black",fieldbackground="white",rowheight=28,borderwidth=0)
+
+        style.configure("Treeview.Heading",background="#f0f0f0",foreground="black",relief="flat")
+
+        # Cor de quando você clica em uma linha
+        style.map("Treeview",background=[('selected', '#3498db')],foreground=[('selected', 'white')])
+
+        # Criar a Treeview
         t = ttk.Treeview(t_frame, columns=cols, show="headings", height=8)
+        
+        # --- ADICIONANDO A BARRA DE ROLAGEM ---
+        scrollbar = ctk.CTkScrollbar(t_frame, orientation="vertical", command=t.yview)
+        t.configure(yscrollcommand=scrollbar.set)
+        
+        # Posicionamento
+        scrollbar.pack(side="right", fill="y")
         t.pack(side="left", fill="x", expand=True)
-        for c in cols: t.heading(c, text=c); t.column(c, width=90, anchor="center")
+
+        # Configurar Colunas
+        for c in cols: 
+            t.heading(c, text=c)
+            t.column(c, width=90, anchor="center")
+            
         t.bind("<<TreeviewSelect>>", lambda e: self.selecionar(t))
         return t
 
