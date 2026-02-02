@@ -1,31 +1,78 @@
 import customtkinter as ctk
 import pandas as pd
+from tkinter import filedialog, messagebox
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import database as db
 import sqlite3
+from datetime import datetime
+import matplotlib.dates as mdates
+from tkcalendar import Calendar
+from openpyxl.styles import Font, PatternFill
 
 class AbaDashboard(ctk.CTkScrollableFrame):
     def __init__(self, master):
         super().__init__(master, fg_color="transparent")
         
-        ctk.CTkLabel(self, text="📊 ANÁLISE GERAL DE PRODUÇÃO", font=("Arial", 24, "bold")).pack(pady=20)
+        # --- TÍTULO PRINCIPAL ---
+        ctk.CTkLabel(self, text="📊 DASHBOARD ESTRATÉGICO", font=("Arial", 24, "bold")).pack(pady=20)
+        
+        # --- FILTROS DE DATA ---
+        self.frame_filtros = ctk.CTkFrame(self)
+        self.frame_filtros.pack(fill="x", padx=20, pady=10)
+        
+        self.data_inicio_str = datetime.now().replace(day=1).strftime('%Y-%m-%d')
+        self.data_fim_str = datetime.now().strftime('%Y-%m-%d')
+
+        ctk.CTkLabel(self.frame_filtros, text="Início:").pack(side="left", padx=5)
+        self.btn_data_inicio = ctk.CTkButton(self.frame_filtros, text=self.data_inicio_str, width=120, fg_color="#34495e", command=lambda: self.abrir_calendario("inicio"))
+        self.btn_data_inicio.pack(side="left", padx=5)
+        
+        ctk.CTkLabel(self.frame_filtros, text="Fim:").pack(side="left", padx=5)
+        self.btn_data_fim = ctk.CTkButton(self.frame_filtros, text=self.data_fim_str, width=120, fg_color="#34495e", command=lambda: self.abrir_calendario("fim"))
+        self.btn_data_fim.pack(side="left", padx=5)
+        
+        ctk.CTkButton(self.frame_filtros, text="🔍 ATUALIZAR", width=100, command=self.refresh, fg_color="#3498db").pack(side="left", padx=10)
+
+        # Botão de Exportar Profissional
+        self.btn_exportar = ctk.CTkButton(self, text="📥 EXCEL: RELATÓRIO COMPLETO", fg_color="#27ae60", hover_color="#1e8449", font=("Arial", 13, "bold"), command=self.exportar_relatorio_geral)
+        self.btn_exportar.pack(pady=(10, 20))
         
         # --- CARDS DE KPI ---
         self.frame_cards_master = ctk.CTkFrame(self, fg_color="transparent")
         self.frame_cards_master.pack(fill="x", padx=20, pady=10)
         
-        self.card_vendas = self.criar_card(self.frame_cards_master, "Faturamento Total", "R$ 0,00", "#2ecc71")
-        self.card_pecas = self.criar_card(self.frame_cards_master, "Peças em Estoque", "0 un", "#3498db")
-        self.card_filamento_total = self.criar_card(self.frame_cards_master, "Filamento Total (g)", "0 g", "#f1c40f")
-        self.card_tipos_filamento = self.criar_card(self.frame_cards_master, "Tipos de Materiais", "0", "#9b59b6")
+        self.card_lucro = self.criar_card(self.frame_cards_master, "Saldo no Período", "R$ 0,00", "#2ecc71")
+        self.card_saidas = self.criar_card(self.frame_cards_master, "Total Saídas", "R$ 0,00", "#e74c3c")
+        self.card_filamento_real = self.criar_card(self.frame_cards_master, "Estoque Total (g)", "0 g", "#f1c40f")
+        self.card_vendas_qtd = self.criar_card(self.frame_cards_master, "Vendas (Período)", "0", "#3498db")
 
-        # --- CONTAINER DE GRÁFICOS (Vertical) ---
-        # Removido pack_propagate para permitir que o scroll funcione conforme os gráficos são adicionados
+        # Container dos Gráficos
         self.frame_graficos = ctk.CTkFrame(self, fg_color="transparent")
         self.frame_graficos.pack(fill="both", expand=True, padx=20, pady=20)
         
         self.refresh()
+
+    def abrir_calendario(self, tipo):
+        janela_cal = ctk.CTkToplevel(self)
+        janela_cal.title("Selecionar Data")
+        janela_cal.geometry("300x380")
+        janela_cal.grab_set() 
+        janela_cal.attributes("-topmost", True)
+        cal = Calendar(janela_cal, selectmode='day', date_pattern='y-mm-dd')
+        cal.pack(pady=20, padx=10, fill="both", expand=True)
+
+        def confirmar():
+            data_sel = cal.get_date()
+            if tipo == "inicio":
+                self.data_inicio_str = data_sel
+                self.btn_data_inicio.configure(text=data_sel)
+            else:
+                self.data_fim_str = data_sel
+                self.btn_data_fim.configure(text=data_sel)
+            janela_cal.destroy()
+            self.refresh()
+        ctk.CTkButton(janela_cal, text="Confirmar Data", command=confirmar).pack(pady=10)
 
     def criar_card(self, master, titulo, valor, cor):
         card = ctk.CTkFrame(master, border_width=2, border_color=cor)
@@ -35,57 +82,153 @@ class AbaDashboard(ctk.CTkScrollableFrame):
         lbl_valor.pack(pady=(5,15))
         return lbl_valor
 
+    def abreviar(self, texto, limite=10):
+        texto = str(texto)
+        return (texto[:limite] + '..') if len(texto) > limite else texto
+
     def refresh(self):
         try:
+            d_ini, d_fim = self.data_inicio_str, self.data_fim_str
+            d_fim_completo = f"{d_fim} 23:59:59"
+
             conn = sqlite3.connect(db.DB_PATH)
-            df_vendas = pd.read_sql_query("SELECT * FROM vendas", conn)
-            df_produtos = pd.read_sql_query("SELECT * FROM produtos", conn)
-            df_filamento = pd.read_sql_query("SELECT * FROM filamento", conn)
+            df_financeiro = pd.read_sql_query(f"SELECT * FROM financeiro WHERE data >= '{d_ini}' AND data <= '{d_fim_completo}'", conn)
+            df_filamento = pd.read_sql_query("SELECT material, cor, peso_atual_g FROM filamento ORDER BY material ASC", conn)
+            df_vendas = pd.read_sql_query(f"SELECT id FROM vendas WHERE data >= '{d_ini}' AND data <= '{d_fim_completo}'", conn)
             conn.close()
 
-            # Atualiza Cards
-            faturamento = df_vendas['valor_total'].sum() if not df_vendas.empty else 0
-            total_pecas = df_produtos['quantidade'].sum() if not df_produtos.empty else 0
-            total_gramas = df_filamento['quantidade_g'].sum() if not df_filamento.empty else 0
-            qtd_tipos = df_filamento['material'].nunique() if not df_filamento.empty else 0
+            # --- ATUALIZAÇÃO DOS CARDS ---
+            ent = df_financeiro[df_financeiro['tipo'] == 'ENTRADA']['valor'].sum()
+            sai = df_financeiro[df_financeiro['tipo'] == 'SAIDA']['valor'].sum()
+            self.card_lucro.configure(text=f"R$ {ent - sai:.2f}")
+            self.card_saidas.configure(text=f"R$ {sai:.2f}")
+            self.card_filamento_real.configure(text=f"{df_filamento['peso_atual_g'].sum():.0f} g")
+            self.card_vendas_qtd.configure(text=f"{len(df_vendas)}")
 
-            self.card_vendas.configure(text=f"R$ {faturamento:.2f}")
-            self.card_pecas.configure(text=f"{int(total_pecas)} un")
-            self.card_filamento_total.configure(text=f"{total_gramas:.0f} g")
-            self.card_tipos_filamento.configure(text=f"{int(qtd_tipos)} tipos")
-
-            # Limpa o container
-            for widget in self.frame_graficos.winfo_children(): 
-                widget.destroy()
-            
+            for w in self.frame_graficos.winfo_children(): w.destroy()
             plt.style.use('dark_background')
 
-            # --- GRÁFICO 1: BARRAS (TOPO) ---
+            # --- GRÁFICO 1: ESTOQUE (BARRAS) ---
             if not df_filamento.empty:
-                # Aumentamos a largura (figsize) já que ele ocupa a tela toda
-                fig1, ax1 = plt.subplots(figsize=(10, 5)) 
-                df_f_plot = df_filamento.sort_values('quantidade_g', ascending=False).head(10)
-                
-                ax1.bar(df_f_plot['material'], df_f_plot['quantidade_g'], color='#f1c40f')
-                ax1.set_title("Estoque por Material (Gramas)", fontsize=16, pad=20)
-                plt.xticks(rotation=30, ha='right', fontsize=11)
+                fig1, ax1 = plt.subplots(figsize=(12, 4))
+                labels = [f"{self.abreviar(r['material'], 8)}\n{self.abreviar(r['cor'], 6)}" for _, r in df_filamento.iterrows()]
+                cores = ['#e74c3c' if x < 200 else '#3498db' for x in df_filamento['peso_atual_g']]
+                bars = ax1.bar(labels, df_filamento['peso_atual_g'], color=cores)
+                ax1.bar_label(bars, padding=3, fontsize=8)
+                ax1.set_title("Volume em Estoque por Filamento (g)", fontsize=12, pad=20)
+                plt.xticks(rotation=45, ha='right', fontsize=9)
+                plt.subplots_adjust(bottom=0.3)
+                FigureCanvasTkAgg(fig1, self.frame_graficos).get_tk_widget().pack(fill="x", pady=10)
+
+            # --- PROCESSAMENTO PARA GRÁFICOS TEMPORAIS ---
+            if not df_financeiro.empty:
+                df_financeiro['data_dt'] = pd.to_datetime(df_financeiro['data']).dt.date
+                resumo = df_financeiro.groupby(['data_dt', 'tipo'])['valor'].sum().unstack().fillna(0)
+                resumo = resumo.sort_index()
+
+                for col in ['ENTRADA', 'SAIDA']:
+                    if col not in resumo: resumo[col] = 0.0
+
+                # --- GRÁFICO 2: FLUXO DIÁRIO (LINHAS) ---
+                fig2, ax2 = plt.subplots(figsize=(10, 4))
+                resumo.plot(kind='line', marker='o', ax=ax2, color=['#2ecc71', '#e74c3c'], linewidth=2)
+                ax2.set_title(f"Movimentações Financeiras Diárias", fontsize=11)
+                ax2.xaxis.set_major_formatter(mdates.DateFormatter('%d/%m'))
+                ax2.set_xlim([pd.to_datetime(d_ini), pd.to_datetime(d_fim)])
                 plt.tight_layout()
+                FigureCanvasTkAgg(fig2, self.frame_graficos).get_tk_widget().pack(fill="x", pady=10)
 
-                canvas1 = FigureCanvasTkAgg(fig1, self.frame_graficos)
-                canvas1.get_tk_widget().pack(fill="x", pady=(0, 30))
-
-            # --- GRÁFICO 2: PIZZA (EMBAIXO) ---
-            if not df_vendas.empty:
-                fig2, ax2 = plt.subplots(figsize=(10, 6))
-                vendas_resumo = df_vendas.groupby('produto_nome')['valor_total'].sum().sort_values(ascending=False).head(7)
+                # --- GRÁFICO 3: GASTOS ACUMULADOS (ÁREA) ---
+                resumo['Gastos_Acumulados'] = resumo['SAIDA'].cumsum()
+                fig3, ax3 = plt.subplots(figsize=(10, 4))
                 
-                # Pizza com layout mais limpo
-                ax2.pie(vendas_resumo, labels=vendas_resumo.index, autopct='%1.1f%%', startangle=140, textprops={'fontsize': 10})
-                ax2.set_title("Ranking de Faturamento por Produto", fontsize=16, pad=20)
+                # Criar a área preenchida
+                ax3.fill_between(resumo.index, resumo['Gastos_Acumulados'], color='#e74c3c', alpha=0.2)
+                ax3.plot(resumo.index, resumo['Gastos_Acumulados'], color='#e74c3c', marker='s', linewidth=2, label="Total Gasto")
+                
+                ax3.set_title("Evolução Acumulada de Gastos (R$)", fontsize=11, color="#e74c3c")
+                ax3.xaxis.set_major_formatter(mdates.DateFormatter('%d/%m'))
+                ax3.set_xlim([pd.to_datetime(d_ini), pd.to_datetime(d_fim)])
+                ax3.grid(True, linestyle='--', alpha=0.3)
+                
                 plt.tight_layout()
-
-                canvas2 = FigureCanvasTkAgg(fig2, self.frame_graficos)
-                canvas2.get_tk_widget().pack(fill="x", pady=20)
+                FigureCanvasTkAgg(fig3, self.frame_graficos).get_tk_widget().pack(fill="x", pady=10)
+            else:
+                ctk.CTkLabel(self.frame_graficos, text=f"🚫 Sem dados financeiros para o período selecionado.").pack(pady=40)
 
         except Exception as e:
-            print(f"Erro no Dashboard: {e}")
+            print(f"Erro ao atualizar Dashboard: {e}")
+
+    def exportar_relatorio_geral(self):
+        try:
+            caminho_arquivo = filedialog.asksaveasfilename(
+                defaultextension=".xlsx",
+                filetypes=[("Excel files", "*.xlsx")],
+                title="Salvar Relatório Geral",
+                initialfile=f"Relatorio_PrintFlow_{datetime.now().strftime('%Y%m%d')}.xlsx"
+            )
+
+            if not caminho_arquivo: return
+
+            conn = sqlite3.connect(db.DB_PATH)
+
+            # Queries complexas para converter IDs em Nomes Reais
+            sql_vendas = """
+                SELECT 
+                    v.id AS 'ID',
+                    p.nome AS 'Produto',
+                    f.material || ' (' || f.cor || ')' AS 'Filamento',
+                    v.qtd_vendida AS 'Qtd',
+                    v.valor_total AS 'Total (R$)',
+                    v.data AS 'Data'
+                FROM vendas v
+                JOIN produtos p ON v.produto_id = p.id
+                JOIN filamento f ON v.filamento_id = f.id
+            """
+
+            tabelas = {
+                'Vendas Detalhadas': pd.read_sql_query(sql_vendas, conn),
+                'Fluxo de Caixa': pd.read_sql_query("SELECT tipo, valor, descricao, data FROM financeiro", conn),
+                'Estoque': pd.read_sql_query("SELECT material, cor, peso_atual_g AS 'Saldo (g)', preco_por_g AS 'R$/g' FROM filamento", conn),
+                'Catálogo': pd.read_sql_query("SELECT nome, peso_u AS 'Peso (g)', tempo_h AS 'Tempo (h)', preco_sugerido AS 'Preço' FROM produtos", conn)
+            }
+
+            # Criar aba de Resumo (KPIs)
+            df_fin = tabelas['Fluxo de Caixa']
+            e = df_fin[df_fin['tipo'] == 'ENTRADA']['valor'].sum()
+            s = df_fin[df_fin['tipo'] == 'SAIDA']['valor'].sum()
+            
+            resumo_df = pd.DataFrame({
+                "Indicador Estratégico": ["Faturamento", "Custos", "Lucro Líquido", "Total de Vendas"],
+                "Valor": [f"R$ {e:.2f}", f"R$ {s:.2f}", f"R$ {e-s:.2f}", f"{len(tabelas['Vendas Detalhadas'])} itens"]
+            })
+
+            conn.close()
+
+            # Gravação com Estilo
+            with pd.ExcelWriter(caminho_arquivo, engine='openpyxl') as writer:
+                resumo_df.to_excel(writer, sheet_name='Resumo Financeiro', index=False)
+                for nome, df in tabelas.items():
+                    df.to_excel(writer, sheet_name=nome, index=False)
+                
+                # Formatação visual (Azul Profissional)
+                header_fill = PatternFill(start_color="3498DB", end_color="3498DB", fill_type="solid")
+                header_font = Font(color="FFFFFF", bold=True)
+
+                for sheet in writer.sheets.values():
+                    for col in sheet.columns:
+                        max_len = 0
+                        col_letter = col[0].column_letter
+                        for cell in col:
+                            if cell.row == 1:
+                                cell.fill = header_fill
+                                cell.font = header_font
+                            try:
+                                if len(str(cell.value)) > max_len: max_len = len(str(cell.value))
+                            except: pass
+                        sheet.column_dimensions[col_letter].width = max_len + 5
+
+            messagebox.showinfo("Sucesso", "Relatório Gerencial gerado com sucesso!")
+
+        except Exception as e:
+            messagebox.showerror("Erro", f"Falha na exportação: {e}")
