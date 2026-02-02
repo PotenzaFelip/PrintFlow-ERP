@@ -30,9 +30,9 @@ class AbaCalculadora(ctk.CTkScrollableFrame):
         self.ent_peso_total = self.add_i("Peso TOTAL da Bandeja (g):", "0")
         self.ent_horas = self.add_i("Tempo Total (h):", "0")
         
-        self.ent_hm = self.add_i("Hora-Máquina (R$):", "2.00")
-        self.ent_setup = self.add_i("Setup/Mão de Obra (R$):", "10.00")
-        self.ent_markup = self.add_i("Markup (Multiplicador):", "2.0")
+        self.ent_hm = self.add_i("Hora-Máquina (R$):", "16.50")
+        self.ent_setup = self.add_i("Setup/Mão de Obra (R$):", "2.00")
+        self.ent_markup = self.add_i("Markup (Multiplicador):", "1.0")
 
         # --- RESULTADOS ---
         self.lbl_detalhes = ctk.CTkLabel(self, text="Material: R$ 0.00 | Máquina: R$ 0.00", font=("Arial", 12))
