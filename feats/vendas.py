@@ -18,7 +18,7 @@ class AbaVendas(ctk.CTkFrame):
         self.combo_produto = ctk.CTkOptionMenu(self.frame_inputs, values=self.get_prods(), width=250)
         self.combo_produto.grid(row=0, column=1, padx=10, pady=5)
 
-        # Seleção de Filamento (Obrigatório para o desconto de estoque)
+        # Seleção de Filamento
         ctk.CTkLabel(self.frame_inputs, text="Filamento Utilizado:").grid(row=1, column=0, padx=10, pady=5, sticky="w")
         self.combo_filamento = ctk.CTkOptionMenu(self.frame_inputs, values=self.get_filas(), width=250, fg_color="#27ae60")
         self.combo_filamento.grid(row=1, column=1, padx=10, pady=5)
@@ -40,7 +40,20 @@ class AbaVendas(ctk.CTkFrame):
         ctk.CTkButton(self.frame_btns, text="EXCLUIR REGISTRO", fg_color="#c0392b", command=self.excluir_venda).pack(side="left", padx=5)
         ctk.CTkButton(self.frame_btns, text="LIMPAR", fg_color="#7f8c8d", width=80, command=self.limpar_campos).pack(side="left", padx=5)
 
+        # --- FILTRO DE PESQUISA ---
+        self.frame_busca = ctk.CTkFrame(self, fg_color="transparent")
+        self.frame_busca.pack(fill="x", padx=20, pady=(10, 0))
+
+        self.ent_busca = ctk.CTkEntry(self.frame_busca, placeholder_text="🔍 Pesquisar venda (Produto, Filamento ou Data)...", height=35)
+        self.ent_busca.pack(fill="x", expand=True)
+        self.ent_busca.bind("<KeyRelease>", lambda e: self.atualizar_vendas())
+
         # --- TABELA DE HISTÓRICO ---
+        # Estilo para manter a tabela branca
+        style = ttk.Style()
+        style.configure("Treeview", background="white", foreground="black", fieldbackground="white", rowheight=28)
+        style.map("Treeview", background=[('selected', '#3498db')], foreground=[('selected', 'white')])
+
         self.tree = ttk.Treeview(self, columns=("ID", "Produto", "Filamento", "Qtd", "Total", "Data"), show="headings", height=12)
         for c in ("ID", "Produto", "Filamento", "Qtd", "Total", "Data"): 
             self.tree.heading(c, text=c); self.tree.column(c, width=120, anchor="center")
@@ -63,11 +76,10 @@ class AbaVendas(ctk.CTkFrame):
             qtd = int(self.ent_qtd.get())
             valor = float(self.ent_valor.get().replace(",", "."))
 
-            # O Trigger 'tg_venda_processada' no Banco fará o resto sozinho!
             db.execute("INSERT INTO vendas (produto_id, filamento_id, qtd_vendida, valor_total) VALUES (?,?,?,?)", 
                        (id_p, id_f, qtd, valor))
             
-            messagebox.showinfo("Sucesso", "Venda realizada! Estoque e Financeiro atualizados.")
+            # Sucesso silencioso
             self.refresh_cb()
             self.limpar_campos()
         except Exception as e:
@@ -78,7 +90,7 @@ class AbaVendas(ctk.CTkFrame):
         if not selecao:
             return messagebox.showwarning("Aviso", "Selecione uma venda para excluir.")
         
-        if messagebox.askyesno("Confirmar", "Deseja excluir este registro de venda?\n(Nota: Isso não devolverá o filamento ao estoque automaticamente nesta versão)"):
+        if messagebox.askyesno("Confirmar", "Deseja excluir este registro de venda?"):
             id_venda = self.tree.item(selecao[0])['values'][0]
             db.execute("DELETE FROM vendas WHERE id=?", (id_venda,))
             self.refresh_cb()
@@ -90,19 +102,22 @@ class AbaVendas(ctk.CTkFrame):
         for i in self.tree.get_children(): 
             self.tree.delete(i)
         
+        termo = f"%{self.ent_busca.get()}%"
+        
         sql = """
-            SELECT v.id, p.nome, f.material || ' ' || f.cor, v.qtd_vendida, v.valor_total, v.data 
+            SELECT v.id, p.nome, f.material || ' ' || f.cor as info_f, v.qtd_vendida, v.valor_total, v.data 
             FROM vendas v
             JOIN produtos p ON v.produto_id = p.id
             JOIN filamento f ON v.filamento_id = f.id
+            WHERE p.nome LIKE ? OR info_f LIKE ? OR v.data LIKE ?
             ORDER BY v.id DESC
         """
         
-        # A MUDANÇA ESTÁ AQUI:
-        for r in db.query(sql):
-            # Convertemos o sqlite3.Row em uma tupla simples para o Treeview ler
+        for r in db.query(sql, (termo, termo, termo)):
             self.tree.insert("", "end", values=tuple(r))
 
     def limpar_campos(self):
         self.ent_qtd.delete(0, 'end')
         self.ent_valor.delete(0, 'end')
+        self.ent_busca.delete(0, 'end')
+        self.atualizar_vendas()

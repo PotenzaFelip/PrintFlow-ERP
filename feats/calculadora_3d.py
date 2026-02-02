@@ -64,19 +64,47 @@ class AbaCalculadora(ctk.CTkScrollableFrame):
         except: return ["Sem Filamento"]
 
     def carregar(self, n):
-        if n == "Novo Projeto": return
+        # 1. Limpa todos os campos primeiro
+        self.ent_nome.delete(0, 'end')
+        self.ent_peso_total.delete(0, 'end')
+        self.ent_horas.delete(0, 'end')
+        self.ent_qtd.delete(0, 'end')
+        self.ent_hm.delete(0, 'end')
+
+        # 2. Se for Novo Projeto, define os padrões e sai
+        if n == "Novo Projeto":
+            self.ent_nome.insert(0,"Novo Projeto")
+            self.ent_qtd.insert(0, "1")
+            self.ent_peso_total.insert(0, "0")
+            self.ent_horas.insert(0, "0")
+            self.ent_hm.insert(0, "16.50")
+            self.lbl_detalhes.configure(text="Material: R$ 0.00 | Máquina: R$ 0.00")
+            self.lbl_res.configure(text="Custo Total: R$ 0.00")
+            self.lbl_unitario.configure(text="Custo Unitário: R$ 0.00")
+            return
+
+        # 3. Se for um projeto existente, busca no banco
         try:
             res = db.query("SELECT * FROM produtos WHERE nome=?", (n,))
             if res:
                 d = res[0]
-                # Indices baseados em: id, nome, peso_u, tempo_h, quantidade_produzida, hora_maq, preco_sugerido
-                self.ent_nome.delete(0, 'end'); self.ent_nome.insert(0, str(d['nome'] if isinstance(d, dict) else d[1]))
-                self.ent_peso_total.delete(0, 'end'); self.ent_peso_total.insert(0, str(d['peso_u'] if isinstance(d, dict) else d[2]))
-                self.ent_horas.delete(0, 'end'); self.ent_horas.insert(0, str(d['tempo_h'] if isinstance(d, dict) else d[3]))
-                self.ent_qtd.delete(0, 'end'); self.ent_qtd.insert(0, str(d['quantidade_produzida'] if isinstance(d, dict) else d[4]))
-                self.ent_hm.delete(0, 'end'); self.ent_hm.insert(0, str(d['hora_maq'] if isinstance(d, dict) else d[5]))
+                # Suporte para dicionário (Row) ou Tupla
+                nome = d['nome'] if isinstance(d, dict) else d[1]
+                peso = d['peso_u'] if isinstance(d, dict) else d[2]
+                horas = d['tempo_h'] if isinstance(d, dict) else d[3]
+                qtd = d['quantidade_produzida'] if isinstance(d, dict) else d[4]
+                hm = d['hora_maq'] if isinstance(d, dict) else d[5]
+
+                self.ent_nome.insert(0, str(nome))
+                self.ent_peso_total.insert(0, str(peso))
+                self.ent_horas.insert(0, str(horas))
+                self.ent_qtd.insert(0, str(qtd))
+                self.ent_hm.insert(0, str(hm))
+                
+                # Recalcula as labels sem registrar no banco
                 self.calc(registrar=False)
-        except: pass
+        except Exception as e:
+            print(f"Erro ao carregar projeto: {e}")
 
     def calc(self, registrar):
         try:
@@ -110,9 +138,6 @@ class AbaCalculadora(ctk.CTkScrollableFrame):
                 if peso_bandeja > (saldo_atual + 0.01): # Margem para erro de arredondamento
                     return messagebox.showerror("Erro", "Estoque insuficiente!")
 
-                if not messagebox.askyesno("Confirmar", f"Descontar {peso_bandeja}g?"):
-                    return
-
                 nome_p = self.ent_nome.get()
                 novo_saldo = round(saldo_atual - peso_bandeja, 2)
 
@@ -130,8 +155,7 @@ class AbaCalculadora(ctk.CTkScrollableFrame):
                 p_id = p_res[0]['id'] if isinstance(p_res[0], dict) else p_res[0][0]
                 db.execute("INSERT INTO vendas (produto_id, filamento_id, qtd_vendida, valor_total) VALUES (?,?,?,?)", 
                            (p_id, id_f, qtd, total))
-
-                messagebox.showinfo("Sucesso", f"Saldo atualizado: {novo_saldo}g")
+                messagebox.showinfo("Sucesso", f"Produto Efetivado com Sucesso")
                 self.refresh_callback()
 
         except Exception as e:
