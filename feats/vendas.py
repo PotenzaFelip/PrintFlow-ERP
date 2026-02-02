@@ -2,52 +2,139 @@ import customtkinter as ctk
 from tkinter import ttk, messagebox
 import database as db
 
-class AbaVendas(ctk.CTkFrame):
+class AbaVendas(ctk.CTkScrollableFrame): # Alterado para Scrollable para garantir que os campos caibam em telas menores
     def __init__(self, master, refresh_callback):
         super().__init__(master, fg_color="transparent")
         self.refresh_cb = refresh_callback
         
-        ctk.CTkLabel(self, text="💰 REGISTRAR VENDA", font=("Arial", 18, "bold")).pack(pady=10)
-        self.combo_venda = ctk.CTkOptionMenu(self, values=self.get_prods(), width=400)
-        self.combo_venda.pack(pady=5)
-        self.ent_qtd = ctk.CTkEntry(self, placeholder_text="Quantidade Vendida", width=400)
-        self.ent_qtd.pack(pady=5)
-        
-        ctk.CTkButton(self, text="CONFIRMAR VENDA", fg_color="#e67e22", height=45, command=self.vender).pack(pady=15)
+        ctk.CTkLabel(self, text="💰 GESTÃO DE VENDAS E SAÍDAS", font=("Arial", 20, "bold")).pack(pady=10)
 
-        # Colunas: ID Venda, ID Peça, Nome da Peça, Qtd Vendida, Valor da Venda, Data/Hora
-        self.tree = ttk.Treeview(self, columns=("ID_V", "ID_P", "Peça", "Qtd", "Valor Total", "Data"), show="headings", height=12)
-        for c in ("ID_V", "ID_P", "Peça", "Qtd", "Valor Total", "Data"): 
-            self.tree.heading(c, text=c); self.tree.column(c, width=120, anchor="center")
-        self.tree.pack(fill="both", expand=True, padx=10, pady=5)
+        # --- ÁREA DE INPUTS ---
+        self.frame_inputs = ctk.CTkFrame(self)
+        self.frame_inputs.pack(fill="x", padx=20, pady=10)
+
+        # Seleção de Produto
+        ctk.CTkLabel(self.frame_inputs, text="Selecione o Produto:").grid(row=0, column=0, padx=10, pady=5, sticky="w")
+        self.combo_produto = ctk.CTkOptionMenu(self.frame_inputs, values=self.get_prods(), width=250)
+        self.combo_produto.grid(row=0, column=1, padx=10, pady=5)
+
+        # Seleção de Filamento
+        ctk.CTkLabel(self.frame_inputs, text="Filamento Utilizado:").grid(row=1, column=0, padx=10, pady=5, sticky="w")
+        self.combo_filamento = ctk.CTkOptionMenu(self.frame_inputs, values=self.get_filas(), width=250, fg_color="#27ae60")
+        self.combo_filamento.grid(row=1, column=1, padx=10, pady=5)
+
+        # Quantidade e Valor
+        ctk.CTkLabel(self.frame_inputs, text="Quantidade:").grid(row=0, column=2, padx=10, pady=5, sticky="w")
+        self.ent_qtd = ctk.CTkEntry(self.frame_inputs, placeholder_text="Ex: 1", width=100)
+        self.ent_qtd.grid(row=0, column=3, padx=10, pady=5)
+
+        ctk.CTkLabel(self.frame_inputs, text="Valor Final (R$):").grid(row=1, column=2, padx=10, pady=5, sticky="w")
+        self.ent_valor = ctk.CTkEntry(self.frame_inputs, placeholder_text="Ex: 50.00", width=100)
+        self.ent_valor.grid(row=1, column=3, padx=10, pady=5)
+
+        # --- BOTÕES CRUD ---
+        self.frame_btns = ctk.CTkFrame(self, fg_color="transparent")
+        self.frame_btns.pack(pady=10)
+
+        ctk.CTkButton(self.frame_btns, text="REGISTRAR VENDA", fg_color="#e67e22", command=self.vender).pack(side="left", padx=5)
+        ctk.CTkButton(self.frame_btns, text="EXCLUIR REGISTRO", fg_color="#c0392b", command=self.excluir_venda).pack(side="left", padx=5)
+        ctk.CTkButton(self.frame_btns, text="LIMPAR", fg_color="#7f8c8d", width=80, command=self.limpar_campos).pack(side="left", padx=5)
+
+        # --- FILTRO DE PESQUISA ---
+        self.frame_busca = ctk.CTkFrame(self, fg_color="transparent")
+        self.frame_busca.pack(fill="x", padx=20, pady=(10, 0))
+
+        self.ent_busca = ctk.CTkEntry(self.frame_busca, placeholder_text="🔍 Pesquisar venda (Produto, Filamento ou Data)...", height=35)
+        self.ent_busca.pack(fill="x", expand=True)
+        self.ent_busca.bind("<KeyRelease>", lambda e: self.atualizar_vendas())
+
+        # --- TABELA DE HISTÓRICO COM BARRA DE ROLAGEM ---
+        self.container_tabela = ctk.CTkFrame(self)
+        self.container_tabela.pack(fill="both", expand=True, padx=20, pady=10)
+
+         # --- CONFIGURAÇÃO DA TABELA (FUNDO BRANCO) ---
+        style = ttk.Style()
+        style.theme_use("clam")
+        style.configure("Treeview",background="white",foreground="black",fieldbackground="white",rowheight=28,borderwidth=0)
+
+        style.configure("Treeview.Heading",background="#f0f0f0",foreground="black",relief="flat")
+
+        # Cor de quando você clica em uma linha
+        style.map("Treeview",background=[('selected', '#3498db')],foreground=[('selected', 'white')])
+
+        self.tree = ttk.Treeview(self.container_tabela, columns=("ID", "Produto", "Filamento", "Qtd", "Total", "Data"), show="headings", height=12)
+        
+        # Criando a Scrollbar lateral
+        self.scrollbar = ctk.CTkScrollbar(self.container_tabela, orientation="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=self.scrollbar.set)
+
+        # Layout da Tabela e Scrollbar
+        self.scrollbar.pack(side="right", fill="y")
+        self.tree.pack(side="left", fill="both", expand=True)
+
+        for c in ("ID", "Produto", "Filamento", "Qtd", "Total", "Data"): 
+            self.tree.heading(c, text=c)
+            self.tree.column(c, width=120, anchor="center")
+        
         self.atualizar_vendas()
 
     def get_prods(self):
-        res = db.query("SELECT id, nome, quantidade FROM produtos WHERE quantidade > 0")
-        return [f"{p[1]} (Disp: {p[2]}) | ID:{p[0]}" for p in res] if res else ["Estoque Vazio"]
+        res = db.query("SELECT id, nome FROM produtos")
+        return [f"{p['nome']} | ID:{p['id']}" for p in res] if res else ["Nenhum Produto"]
+
+    def get_filas(self):
+        res = db.query("SELECT id, material, cor, peso_atual_g FROM filamento WHERE peso_atual_g > 0")
+        return [f"{f['material']} {f['cor']} ({f['peso_atual_g']}g) | ID:{f['id']}" for f in res] if res else ["Sem Estoque"]
 
     def vender(self):
         try:
-            id_p = self.combo_venda.get().split("ID:")[1]
-            qtd_v = int(self.ent_qtd.get())
-            p = db.query("SELECT nome, quantidade, preco_sugerido, valor_total_producao FROM produtos WHERE id=?", (id_p,))[0]
+            id_p = self.combo_produto.get().split("ID:")[1]
+            id_f = self.combo_filamento.get().split("ID:")[1]
+            qtd = int(self.ent_qtd.get())
+            valor = float(self.ent_valor.get().replace(",", "."))
+
+            db.execute("INSERT INTO vendas (produto_id, filamento_id, qtd_vendida, valor_total) VALUES (?,?,?,?)", 
+                       (id_p, id_f, qtd, valor))
             
-            if qtd_v > p[1]: return messagebox.showerror("Erro", "Estoque insuficiente!")
-            
-            valor_venda = qtd_v * p[2]
-            db.execute("UPDATE produtos SET quantidade=quantidade-?, valor_total_producao=valor_total_producao-? WHERE id=?", 
-                       (qtd_v, valor_venda, id_p))
-            db.execute("INSERT INTO vendas (produto_id, produto_nome, qtd_vendida, valor_total) VALUES (?,?,?,?)", 
-                       (id_p, p[0], qtd_v, valor_venda))
-            
+            # Sucesso silencioso
             self.refresh_cb()
-            messagebox.showinfo("Sucesso", "Venda registrada!")
-        except: pass
+            self.limpar_campos()
+        except Exception as e:
+            messagebox.showerror("Erro", f"Verifique os dados: {e}")
+
+    def excluir_venda(self):
+        selecao = self.tree.selection()
+        if not selecao:
+            return messagebox.showwarning("Aviso", "Selecione uma venda para excluir.")
+        
+        if messagebox.askyesno("Confirmar", "Deseja excluir este registro de venda?"):
+            id_venda = self.tree.item(selecao[0])['values'][0]
+            db.execute("DELETE FROM vendas WHERE id=?", (id_venda,))
+            self.refresh_cb()
 
     def atualizar_vendas(self):
-        self.combo_venda.configure(values=self.get_prods())
-        for i in self.tree.get_children(): self.tree.delete(i)
-        # Puxa todos os campos da tabela vendas
-        dados = db.query("SELECT id, produto_id, produto_nome, qtd_vendida, valor_total, data FROM vendas ORDER BY id DESC")
-        for r in dados:
-            self.tree.insert("", "end", values=r)
+        self.combo_produto.configure(values=self.get_prods())
+        self.combo_filamento.configure(values=self.get_filas())
+        
+        for i in self.tree.get_children(): 
+            self.tree.delete(i)
+        
+        termo = f"%{self.ent_busca.get()}%"
+        
+        sql = """
+            SELECT v.id, p.nome, f.material || ' ' || f.cor as info_f, v.qtd_vendida, v.valor_total, v.data 
+            FROM vendas v
+            JOIN produtos p ON v.produto_id = p.id
+            JOIN filamento f ON v.filamento_id = f.id
+            WHERE p.nome LIKE ? OR info_f LIKE ? OR v.data LIKE ?
+            ORDER BY v.id DESC
+        """
+        
+        for r in db.query(sql, (termo, termo, termo)):
+            self.tree.insert("", "end", values=tuple(r))
+
+    def limpar_campos(self):
+        self.ent_qtd.delete(0, 'end')
+        self.ent_valor.delete(0, 'end')
+        self.ent_busca.delete(0, 'end')
+        self.atualizar_vendas()
