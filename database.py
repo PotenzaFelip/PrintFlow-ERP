@@ -1,12 +1,23 @@
 import sqlite3
 import os
+import sys
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# DETECÇÃO DO CAMINHO REAL DO EXECUTÁVEL
+if getattr(sys, 'frozen', False):
+    # Se rodando como .exe, BASE_DIR será a pasta onde o .exe está
+    BASE_DIR = os.path.dirname(sys.executable)
+else:
+    # Se rodando como .py (durante o desenvolvimento)
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Define a pasta db e o arquivo fora da pasta temporária
 DB_DIR = os.path.join(BASE_DIR, "db")
 DB_PATH = os.path.join(DB_DIR, "gestao_3d.db")
 
 def init_db():
-    if not os.path.exists(DB_DIR): os.makedirs(DB_DIR)
+    # Cria a pasta 'db' fisicamente ao lado do seu executável
+    if not os.path.exists(DB_DIR): 
+        os.makedirs(DB_DIR)
     
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
