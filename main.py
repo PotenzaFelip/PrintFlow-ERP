@@ -8,9 +8,11 @@ from feats.reparos import AbaReparos
 from feats.financeiro import AbaFinanceiro
 from feats.visualizador_3d import AbaVisualizadorSTL
 import os
+import sys
 
 # Desativa logs desnecessários de bibliotecas gráficas
 os.environ["QT_LOGGING_RULES"] = "*.debug=false;qt.qpa.window=false"
+
 
 class ERP3D(ctk.CTk):
     def __init__(self):
@@ -64,9 +66,24 @@ class ERP3D(ctk.CTk):
 
         self.tela_3d = AbaVisualizadorSTL(self.t_3d)
         self.tela_3d.pack(fill="both", expand=True)
+        
 
         # Atualização inicial
         self.atualizar()
+        self.protocol("WM_DELETE_WINDOW", self.on_closing)
+
+    def on_closing(self):
+        """
+        Fecha o programa corretamente, encerrando processos de gráficos e banco.
+        """
+        try:
+            # Se você tiver métodos de fechar o plotter do PyVista nas abas, chame-os aqui.
+            # Exemplo: self.tela_3d.limpar_plotter() 
+            
+            self.destroy() # Destrói a janela do CustomTkinter
+            sys.exit(0)    # Mata o processo do Python/Executável
+        except:
+            sys.exit(0)
 
     def atualizar(self):
         """
