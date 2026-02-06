@@ -50,7 +50,7 @@ Para compilar o projeto em um único diretório para Windows, garantindo que as 
 pip install pyinstaller
 
 # 2. Execute o build com suporte total a bibliotecas 3D
-pyinstaller --noconfirm --onedir --windowed --clean --add-data "feats;feats" --add-data "stls_projeto;stls_projeto" --collect-submodules "pyvista" --collect-submodules "pyvistaqt" --collect-all "pandas" --collect-all "matplotlib" --hidden-import "PyQt5" --exclude-module "PySide6" --exclude-module "PySide2" --name "PrintFlow_ERP" main.py
+pyinstaller --noconfirm --onefile --windowed --clean --add-data "feats;feats" --add-data "stls_projeto;stls_projeto" --collect-submodules "pyvista" --collect-submodules "pyvistaqt" --collect-all "pandas" --collect-all "matplotlib" --hidden-import "PyQt5" --exclude-module "PySide6" --exclude-module "PySide2" --name "PrintFlow_ERP" main.py
 ```
 
 ## 📂 Guia do Visualizador 3D
